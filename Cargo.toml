@@ -1,0 +1,27 @@
+[package]
+name = "sb-conduit"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "SecuryBlack agent orchestrator and secure tunnel"
+repository = "https://github.com/securyblack/sb-conduit"
+
+[dependencies]
+# TODO: populate with actual dependencies during Phase 0
+# tokio = { version = "1", features = ["full"] }
+# tracing = "0.1"
+# tonic = "0.12"
+# serde = { version = "1", features = ["derive"] }
+# toml = "0.8"
+# sysinfo = "0.33"
+# self_update = "0.42"
+# windows-service = { version = "0.7", optional = true }
+
+[features]
+default = []
+# windows-service = ["dep:windows-service"]
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
