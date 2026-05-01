@@ -13,7 +13,7 @@ TOKEN=""
 ENDPOINT="https://edge.securyblack.com:443"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/securyblack"
-RELEASE_URL="https://github.com/securyblack/sb-agent/releases/latest/download"
+RELEASE_URL="https://github.com/securyblack/nexus-agent/releases/latest/download"
 
 # ─── Colores ────────────────────────────────────────────────────────────────
 RED='\033[0;31m'

@@ -23,7 +23,7 @@ param(
     [string]$InstallDir = "$env:ProgramFiles\SecuryBlack",
 
     [Parameter(Mandatory = $false)]
-    [string]$ReleaseUrl = "https://github.com/securyblack/sb-agent/releases/latest/download"
+    [string]$ReleaseUrl = "https://github.com/securyblack/nexus-agent/releases/latest/download"
 )
 
 $ErrorActionPreference = "Stop"
