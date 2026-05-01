@@ -1,7 +1,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Instalador interactivo de SecuryBlack Agent (nexus-agent) para Windows.
+    Instalador interactivo de Nexus Agent (nexus-agent) para Windows.
 
 .DESCRIPTION
     Pregunta al usuario qué agentes locales desea instalar (OxiPulse, FerroSentry, CupraFlow)
@@ -58,7 +58,7 @@ function Get-Architecture {
 }
 
 # ─── Validaciones ───────────────────────────────────────────────────────────
-Write-Header "SecuryBlack Agent - Instalador Windows"
+Write-Header "Nexus Agent - Instalador Windows"
 
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Error "Este script debe ejecutarse como Administrador."
@@ -97,7 +97,7 @@ if ($enabledAgents.Count -eq 0) {
 }
 
 # ─── Instalar nexus-agent ───────────────────────────────────────────────────
-Write-Header "Instalando SecuryBlack Agent (nexus-agent)"
+Write-Header "Instalando Nexus Agent (nexus-agent)"
 
 $arch = Get-Architecture
 $binaryName = "nexus-agent-$arch.exe"
@@ -198,8 +198,8 @@ Write-Success "Configuración escrita en $dataDir\agent.toml"
 # ─── Registrar servicio Windows ─────────────────────────────────────────────
 Write-Header "Registrando servicio Windows"
 
-$serviceName = "SecuryBlackAgent"
-$displayName = "SecuryBlack Agent"
+$serviceName = "NexusAgent"
+$displayName = "Nexus Agent"
 
 # Eliminar servicio previo si existe
 $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -214,7 +214,7 @@ if ($existing) {
 $null = New-Service `
     -Name $serviceName `
     -DisplayName $displayName `
-    -Description "SecuryBlack Agent - Túnel y orquestador de agentes locales" `
+    -Description "Nexus Agent - Túnel y orquestador de agentes locales" `
     -BinaryPathName "`"$binaryPath`"" `
     -StartupType Automatic
 

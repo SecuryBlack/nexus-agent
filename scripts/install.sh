@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =============================================================================
-# SecuryBlack Agent (nexus-agent) — Instalador Linux/macOS
+# Nexus Agent (nexus-agent) — Instalador Linux/macOS
 # =============================================================================
 # Pregunta al usuario qué agentes locales desea instalar y configura el
 # nexus-agent como servicio systemd. Si no se elige ningún agente, opera
@@ -51,7 +51,7 @@ if [[ "$EUID" -ne 0 ]]; then
     exit 1
 fi
 
-info "=== SecuryBlack Agent - Instalador Linux/macOS ==="
+info "=== Nexus Agent - Instalador Linux/macOS ==="
 
 # Token
 if [[ -z "${TOKEN:-}" ]]; then
@@ -85,7 +85,7 @@ else
 fi
 
 # ─── Instalar nexus-agent ───────────────────────────────────────────────────
-info "Instalando SecuryBlack Agent (nexus-agent)"
+info "Instalando Nexus Agent (nexus-agent)"
 
 ARCH="$(detect_arch)"
 BINARY_NAME="nexus-agent-${ARCH}"
@@ -209,7 +209,7 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=SecuryBlack Agent - Túnel y orquestador de agentes locales
+Description=Nexus Agent - Túnel y orquestador de agentes locales
 After=network-online.target
 Wants=network-online.target
 

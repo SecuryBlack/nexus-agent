@@ -77,7 +77,7 @@ mod service {
         service_dispatcher,
     };
 
-    const SERVICE_NAME: &str = "SecuryBlackAgent";
+    const SERVICE_NAME: &str = "NexusAgent";
 
     define_windows_service!(ffi_service_main, service_main);
 
