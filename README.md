@@ -1,4 +1,4 @@
-# SecuryBlack Agent (sb-agent)
+# SecuryBlack Agent (nexus-agent)
 
 Agente SecuryBlack para servidores cliente. Proporciona un túnel persistente y seguro, orquesta agentes locales (OxiPulse, FerroSentry) y gestiona despliegues CI/CD desde repos de GitHub.
 
@@ -9,7 +9,7 @@ Agente SecuryBlack para servidores cliente. Proporciona un túnel persistente y 
 ## 🏷️ Nombre
 
 - **Nombre del producto:** SecuryBlack Agent
-- **Binario:** `sb-agent`
+- **Binario:** `nexus-agent`
 - **Servicio systemd:** `securyblack-agent` (Linux) / `SecuryBlackAgent` (Windows)
 
 "Agente" es el punto de presencia de SecuryBlack en la infraestructura del cliente: túnel seguro, proxy OTLP local, orquestación de agentes y motor de despliegue CI/CD.
@@ -48,7 +48,7 @@ Agente SecuryBlack para servidores cliente. Proporciona un túnel persistente y 
 │     SERVIDOR DEL CLIENTE    │                                               │
 │                             │                                               │
 │  ┌──────────────────────────┴─────────────────────────┐                      │
-│  │  SecuryBlack Agent (sb-agent) — Servicio Rust      │                      │
+│  │  SecuryBlack Agent (nexus-agent) — Servicio Rust      │                      │
 │  │  ┌────────────────┐  ┌──────────────────────────┐  │                      │
 │  │  │ Tunnel Client  │  │ Local OTLP gRPC Server   │  │◄── OxiPulse local  │
 │  │  │ (WebSocket/gRPC│  │ (localhost:4317)         │  │    (modo local)    │
@@ -158,7 +158,7 @@ Sin cambios significativos. El `endpoint` que recibe `init()` vendrá seteado a 
 Los scripts `install.sh` e `install.ps1` instalan el agente como servicio de sistema:
 
 ```bash
-curl -fsSL https://install.securyblack.dev/sb-agent | bash -s -- --token <TOKEN>
+curl -fsSL https://install.securyblack.dev/nexus-agent | bash -s -- --token <TOKEN>
 ```
 
 Flujo interactivo:
@@ -169,7 +169,7 @@ El instalador genera `/etc/securyblack/agent.toml` con el token y arranca el ser
 ## 📁 Estructura del Proyecto Conduit (Rust)
 
 ```
-sb-agent/
+nexus-agent/
 ├── Cargo.toml
 ├── proto/
 │   └── tunnel/v1/tunnel.proto ← Definición del Conduit Protocol

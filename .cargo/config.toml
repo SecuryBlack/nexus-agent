@@ -1,2 +1,2 @@
 [env]
-PROTOC = { value = "D:\\protoc\\bin\\protoc.exe", force = true }
+PROTOC = { value = "D:/protoc/bin/protoc.exe", force = true }

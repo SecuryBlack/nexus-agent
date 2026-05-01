@@ -24,7 +24,7 @@ async fn main() {
     let _ = dotenvy::dotenv();
 
     tracing_subscriber::fmt::init();
-    tracing::info!("sb-agent v{} starting…", env!("CARGO_PKG_VERSION"));
+    tracing::info!("nexus-agent v{} starting…", env!("CARGO_PKG_VERSION"));
 
     // Cargar configuración persistente
     let cfg = match config::AgentConfig::load() {

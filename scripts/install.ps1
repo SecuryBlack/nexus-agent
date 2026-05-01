@@ -1,7 +1,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Instalador interactivo de SecuryBlack Agent (nexus-agent / sb-agent) para Windows.
+    Instalador interactivo de SecuryBlack Agent (nexus-agent) para Windows.
 
 .DESCRIPTION
     Pregunta al usuario qué agentes locales desea instalar (OxiPulse, FerroSentry, CupraFlow)
@@ -50,7 +50,7 @@ function Test-Command($cmd) {
 }
 
 function Get-Architecture {
-    # sb-agent solo soporta x86_64 por ahora
+    # nexus-agent solo soporta x86_64 por ahora
     if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
         return "x86_64-pc-windows-msvc"
     }
@@ -100,9 +100,9 @@ if ($enabledAgents.Count -eq 0) {
 Write-Header "Instalando SecuryBlack Agent (nexus-agent)"
 
 $arch = Get-Architecture
-$binaryName = "sb-agent-$arch.exe"
+$binaryName = "nexus-agent-$arch.exe"
 $downloadUrl = "$ReleaseUrl/$binaryName"
-$binaryPath = Join-Path $InstallDir "sb-agent.exe"
+$binaryPath = Join-Path $InstallDir "nexus-agent.exe"
 $dataDir = "$env:ProgramData\SecuryBlack"
 
 # Crear directorios

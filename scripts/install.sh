@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =============================================================================
-# SecuryBlack Agent (nexus-agent / sb-agent) — Instalador Linux/macOS
+# SecuryBlack Agent (nexus-agent) — Instalador Linux/macOS
 # =============================================================================
 # Pregunta al usuario qué agentes locales desea instalar y configura el
 # nexus-agent como servicio systemd. Si no se elige ningún agente, opera
@@ -88,9 +88,9 @@ fi
 info "Instalando SecuryBlack Agent (nexus-agent)"
 
 ARCH="$(detect_arch)"
-BINARY_NAME="sb-agent-${ARCH}"
+BINARY_NAME="nexus-agent-${ARCH}"
 DOWNLOAD_URL="${RELEASE_URL}/${BINARY_NAME}"
-BINARY_PATH="${INSTALL_DIR}/sb-agent"
+BINARY_PATH="${INSTALL_DIR}/nexus-agent"
 
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$CONFIG_DIR"

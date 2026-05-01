@@ -66,25 +66,29 @@ jobs:
       - name: Package (Linux tar.gz)
         if: matrix.archive_ext == 'tar.gz'
         run: |
-          ASSET="sb-agent-${{ matrix.target }}"
-          cp "target/${{ matrix.target }}/release/sb-agent" sb-agent
-          tar czf "${ASSET}.tar.gz" sb-agent
+          ASSET="nexus-agent-${{ matrix.target }}"
+          cp "target/${{ matrix.target }}/release/nexus-agent" nexus-agent
+          tar czf "${ASSET}.tar.gz" nexus-agent
           sha256sum "${ASSET}.tar.gz" > "${ASSET}.tar.gz.sha256"
+          cp nexus-agent "${ASSET}"
           echo "ASSET_PATH=${ASSET}.tar.gz" >> "$GITHUB_ENV"
           echo "CHECKSUM_PATH=${ASSET}.tar.gz.sha256" >> "$GITHUB_ENV"
+          echo "BINARY_PATH=${ASSET}" >> "$GITHUB_ENV"
 
       # ── Windows packaging ────────────────────────────────────────────────
       - name: Package (Windows zip)
         if: matrix.archive_ext == 'zip'
         shell: pwsh
         run: |
-          $asset = "sb-agent-${{ matrix.target }}"
-          Copy-Item "target\${{ matrix.target }}\release\sb-agent.exe" "sb-agent.exe"
-          Compress-Archive -Path "sb-agent.exe" -DestinationPath "${asset}.zip"
+          $asset = "nexus-agent-${{ matrix.target }}"
+          Copy-Item "target\${{ matrix.target }}\release\nexus-agent.exe" "nexus-agent.exe"
+          Compress-Archive -Path "nexus-agent.exe" -DestinationPath "${asset}.zip"
           $hash = (Get-FileHash "${asset}.zip" -Algorithm SHA256).Hash.ToLower()
           "${hash}  ${asset}.zip" | Set-Content "${asset}.zip.sha256"
+          Copy-Item "nexus-agent.exe" "${asset}.exe"
           "ASSET_PATH=${asset}.zip"          | Add-Content $env:GITHUB_ENV
           "CHECKSUM_PATH=${asset}.zip.sha256" | Add-Content $env:GITHUB_ENV
+          "BINARY_PATH=${asset}.exe"         | Add-Content $env:GITHUB_ENV
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -93,6 +97,7 @@ jobs:
           path: |
             ${{ env.ASSET_PATH }}
             ${{ env.CHECKSUM_PATH }}
+            ${{ env.BINARY_PATH }}
           if-no-files-found: error
 
   release:
