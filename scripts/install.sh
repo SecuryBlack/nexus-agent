@@ -115,12 +115,11 @@ if $INSTALL_OXIPULSE; then
     if command -v oxipulse &>/dev/null || [[ -f /etc/oxipulse/config.toml ]]; then
         warn "OxiPulse parece estar ya instalado. Saltando."
     else
-        # Invocar instalador oficial de OxiPulse
+        # Invocar instalador oficial de OxiPulse en modo local_agent
         OXI_URL="https://install.oxipulse.dev"
         if curl -fsSL "$OXI_URL" &>/dev/null; then
             info "Invocando instalador oficial de OxiPulse ..."
-            export OXIPULSE_TOKEN="$TOKEN"
-            bash -c "$(curl -fsSL $OXI_URL)"
+            bash -c "$(curl -fsSL $OXI_URL)" -- --mode local_agent --token "$TOKEN"
             ok "OxiPulse instalado."
         else
             warn "No se pudo contactar el instalador de OxiPulse. Instálalo manualmente."

@@ -32,9 +32,20 @@ impl TunnelClient {
     /// Bucle principal: conecta, hace handshake, y mantiene heartbeats + agent status.
     /// Reconecta automáticamente con backoff exponencial si la conexión cae.
     pub async fn run(&self) {
+        // Canal persistente entre proxy/bridge y túnel
+        let (bridge_tx, mut bridge_rx) = mpsc::channel::<TunnelEnvelope>(256);
+
+        // Arrancar proxy OTLP local en background
+        let proxy_bridge_tx = bridge_tx.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::proxy::run_proxy(proxy_bridge_tx).await {
+                tracing::error!("proxy error: {}", e);
+            }
+        });
+
         let mut backoff_secs = 1u64;
         loop {
-            match self.connect_and_stream().await {
+            match self.connect_and_stream(&mut bridge_rx).await {
                 Ok(()) => {
                     tracing::info!("tunnel closed gracefully, reconnecting…");
                     backoff_secs = 1;
@@ -48,7 +59,10 @@ impl TunnelClient {
         }
     }
 
-    async fn connect_and_stream(&self) -> anyhow::Result<()> {
+    async fn connect_and_stream(
+        &self,
+        bridge_rx: &mut mpsc::Receiver<TunnelEnvelope>,
+    ) -> anyhow::Result<()> {
         let channel = Channel::from_shared(self.endpoint.clone())?
             .connect()
             .await?;
@@ -113,7 +127,7 @@ impl TunnelClient {
             }
         }
 
-        // ─── Loop de heartbeat + agent status ──────────────────────────────
+        // ─── Loop de heartbeat + agent status + bridge ─────────────────────
         let mut hb_ticker = interval(Duration::from_secs(30));
         let mut status_ticker = interval(Duration::from_secs(60));
 
@@ -157,6 +171,21 @@ impl TunnelClient {
                     if tx.send(status_msg).await.is_err() {
                         tracing::warn!("tunnel send channel closed, ending stream loop");
                         return Ok(());
+                    }
+                }
+
+                maybe_envelope = bridge_rx.recv() => {
+                    match maybe_envelope {
+                        Some(envelope) => {
+                            if tx.send(envelope).await.is_err() {
+                                tracing::warn!("tunnel send channel closed, ending stream loop");
+                                return Ok(());
+                            }
+                        }
+                        None => {
+                            tracing::warn!("bridge channel closed, ending stream loop");
+                            return Ok(());
+                        }
                     }
                 }
             }

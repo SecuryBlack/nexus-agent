@@ -127,9 +127,9 @@ if ($installOxiPulse) {
         # OxiPulse tiene su propio instalador one-liner
         $oxiPulseUrl = "https://install.oxipulse.dev"
         Write-Host "Invocando instalador oficial de OxiPulse ..."
-        # El script de OxiPulse acepta -Token
         $oxiScript = Invoke-RestMethod -Uri $oxiPulseUrl -UseBasicParsing
-        Invoke-Expression "$oxiScript -Token '$Token'"
+        $sb = [scriptblock]::Create($oxiScript)
+        & $sb -Token $Token -Mode "local_agent"
         Write-Success "OxiPulse instalado."
     } catch {
         Write-Warn "No se pudo instalar OxiPulse automáticamente. Instálalo manualmente."

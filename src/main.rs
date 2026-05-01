@@ -3,6 +3,7 @@ pub mod proto {
 }
 
 mod config;
+mod proxy;
 mod registry;
 mod tunnel;
 
