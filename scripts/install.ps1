@@ -220,6 +220,12 @@ $null = New-Service `
 
 Write-Success "Servicio $serviceName registrado."
 
+# Configurar reinicio automático ante fallos (incluyendo exit limpio tras auto-update)
+# failureflag 1 hace que el SCM trate cualquier salida como fallo, reiniciando el servicio
+& sc.exe failure $serviceName reset= 86400 actions= restart/10000/restart/30000/restart/60000 | Out-Null
+& sc.exe failureflag $serviceName 1 | Out-Null
+Write-Success "Política de reinicio configurada para auto-updates."
+
 # Iniciar servicio
 Write-Host "Iniciando servicio ..."
 Start-Service -Name $serviceName

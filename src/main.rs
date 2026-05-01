@@ -6,6 +6,7 @@ mod config;
 mod proxy;
 mod registry;
 mod tunnel;
+mod updater;
 
 use std::sync::Arc;
 use tunnel::TunnelClient;
@@ -48,6 +49,8 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
         enabled_agents = ?cfg.enabled_agents,
         "configuration loaded"
     );
+
+    updater::start_daily_check();
 
     let client = TunnelClient::new(cfg.endpoint.clone(), cfg.token.clone(), cfg.enabled_agents.clone());
 
