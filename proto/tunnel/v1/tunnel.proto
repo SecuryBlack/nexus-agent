@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package securyblack.tunnel.v1;
+
+option go_package = "github.com/securyblack/securyblack-edge-gateway/proto/tunnel/v1;tunnelv1";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TunnelService — canal bidireccional persistente entre sb-agent y la nube.
+// Un único stream gRPC multiplexa todos los mensajes del Conduit Protocol.
+// ─────────────────────────────────────────────────────────────────────────────
+service TunnelService {
+  rpc Stream(stream TunnelEnvelope) returns (stream TunnelEnvelope);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TunnelEnvelope — contenedor multiplexado.
+// Cada mensaje que fluye por el túnel va envuelto en un envelope para que
+// gRPC/HTTP2 maneje un único stream bidireccional.
+// ─────────────────────────────────────────────────────────────────────────────
+message TunnelEnvelope {
+  oneof payload {
+    // Handshake
+    ClientHello       hello         = 1;
+    ServerHello       server_hello  = 2;
+
+    // Control / keepalive
+    Heartbeat         heartbeat     = 3;
+
+    // Métricas OTLP (agente → cloud)
+    // Serialización cruda de ExportMetricsServiceRequest.
+    bytes             otlp_metrics_payload = 4;
+
+    // Despliegue CI/CD (cloud → agente)
+    DeployCommand     deploy_cmd    = 5;
+
+    // Logs de build en tiempo real (agente → cloud)
+    DeployLog         deploy_log    = 6;
+
+    // Estado final de un deploy (agente → cloud)
+    DeployStatus      deploy_status = 7;
+
+    // Comandos genéricos de gestión (cloud → agente)
+    CommandRequest    command       = 8;
+
+    // Respuesta a comandos (agente → cloud)
+    CommandResponse   command_resp  = 9;
+
+    // Heartbeat de agentes locales (agente → cloud)
+    AgentStatus       agent_status  = 10;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handshake
+// ─────────────────────────────────────────────────────────────────────────────
+
+message ClientHello {
+  // agent_id es opcional; si el agente no lo conoce aún puede dejarse vacío
+  // y el gateway lo asignará vinculándolo al token.
+  string agent_id = 1;
+
+  // Token de la tabla agents (mismo que usa OxiPulse).
+  string token = 2;
+
+  // Versión del binario sb-agent (ej: "0.1.0").
+  string version = 3;
+
+  // Agentes locales detectados en este servidor (OxiPulse, FerroSentry, etc.).
+  repeated AgentInfo local_agents = 4;
+
+  // Información del host para mostrar en el dashboard.
+  string os = 5;        // "linux", "windows", "darwin"
+  string arch = 6;      // "x86_64", "aarch64"
+  string hostname = 7;  // nombre del servidor
+}
+
+message ServerHello {
+  bool   accepted  = 1;
+  string reason    = 2;  // motivo del rechazo si accepted == false
+  string session_id = 3; // ID de sesión para trazabilidad en logs
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keepalive
+// ─────────────────────────────────────────────────────────────────────────────
+
+message Heartbeat {
+  int64 timestamp_ms = 1;  // epoch millis del emisor
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inventario de agentes locales
+// ─────────────────────────────────────────────────────────────────────────────
+
+message AgentInfo {
+  string name    = 1;  // ej: "oxipulse", "ferrosentry"
+  string version = 2;  // ej: "1.2.0"
+  string status  = 3;  // "running" | "stopped" | "error" | "unknown"
+}
+
+message AgentStatus {
+  repeated AgentInfo agents = 1;
+  int64 timestamp_ms = 2;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CI/CD — Deploy commands (cloud → agente)
+// ─────────────────────────────────────────────────────────────────────────────
+
+message DeployCommand {
+  string deployment_id = 1;  // UUID del deployment
+  string project_id    = 2;  // UUID del proyecto
+
+  oneof action {
+    GitPullAction       git_pull       = 3;
+    DockerBuildAction   docker_build   = 4;
+    DockerComposeAction docker_compose = 5;
+  }
+}
+
+message GitPullAction {
+  string repo_url  = 1;
+  string branch    = 2;
+  string commit_sha = 3;
+}
+
+message DockerBuildAction {
+  string context_dir = 1;  // ruta relativa dentro del clone
+  string dockerfile  = 2;  // nombre del Dockerfile (default: "Dockerfile")
+  string tag         = 3;  // imagen:tag resultante
+}
+
+message DockerComposeAction {
+  string file         = 1;  // ruta al compose file (default: "docker-compose.yml")
+  string project_name = 2;  // -p project_name
+  map<string, string> env = 3;  // variables de entorno inyectadas
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CI/CD — Deploy feedback (agente → cloud)
+// ─────────────────────────────────────────────────────────────────────────────
+
+message DeployLog {
+  string deployment_id = 1;
+  string stream        = 2;  // "stdout" | "stderr" | "event"
+  string message       = 3;
+  int64  timestamp_ms  = 4;
+}
+
+message DeployStatus {
+  string deployment_id = 1;
+  string status        = 2;  // "pending" | "building" | "success" | "failed" | "cancelled"
+  int64  duration_ms   = 3;
+  string error_message = 4;  // vacío si status == "success"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Management — Comandos genéricos (cloud → agente)
+// ─────────────────────────────────────────────────────────────────────────────
+
+message CommandRequest {
+  string command_id   = 1;  // UUID
+  string command_type = 2;  // "shell", "restart_service", "tail_logs"
+  string payload      = 3;  // JSON con argumentos específicos del tipo
+  int32  timeout_secs = 4;  // 0 = default del agente
+}
+
+message CommandResponse {
+  string command_id = 1;
+  bool   success    = 2;
+  string stdout     = 3;
+  string stderr     = 4;
+  int32  exit_code  = 5;
+  int64  duration_ms = 6;
+}

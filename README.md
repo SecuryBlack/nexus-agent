@@ -1,6 +1,6 @@
-# SecuryBlack Conduit
+# SecuryBlack Agent (sb-agent)
 
-Orquestador de agentes SecuryBlack para servidores cliente. Proporciona un túnel persistente y seguro entre la infraestructura del cliente y SecuryBlack Cloud, actuando como proxy local para agentes como OxiPulse.
+Agente SecuryBlack para servidores cliente. Proporciona un túnel persistente y seguro, orquesta agentes locales (OxiPulse, FerroSentry) y gestiona despliegues CI/CD desde repos de GitHub.
 
 > **Estado:** Planificación / Diseño. Este documento recoge la arquitectura propuesta para desarrollo futuro.
 
@@ -8,11 +8,11 @@ Orquestador de agentes SecuryBlack para servidores cliente. Proporciona un túne
 
 ## 🏷️ Nombre
 
-- **Nombre del producto:** Conduit
-- **Binario:** `sb-conduit`
-- **Servicio systemd:** `securyblack-conduit` (Linux) / `SecuryBlackConduit` (Windows)
+- **Nombre del producto:** SecuryBlack Agent
+- **Binario:** `sb-agent`
+- **Servicio systemd:** `securyblack-agent` (Linux) / `SecuryBlackAgent` (Windows)
 
-"Conduit" significa conducto/tubo de comunicación. Describe exactamente la función: un canal seguro y persistente por donde fluyen los datos de los agentes locales hacia SecuryBlack Cloud.
+"Agente" es el punto de presencia de SecuryBlack en la infraestructura del cliente: túnel seguro, proxy OTLP local, orquestación de agentes y motor de despliegue CI/CD.
 
 ---
 
@@ -48,7 +48,7 @@ Orquestador de agentes SecuryBlack para servidores cliente. Proporciona un túne
 │     SERVIDOR DEL CLIENTE    │                                               │
 │                             │                                               │
 │  ┌──────────────────────────┴─────────────────────────┐                      │
-│  │  Conduit (sb-conduit) — Servicio Rust              │                      │
+│  │  SecuryBlack Agent (sb-agent) — Servicio Rust      │                      │
 │  │  ┌────────────────┐  ┌──────────────────────────┐  │                      │
 │  │  │ Tunnel Client  │  │ Local OTLP gRPC Server   │  │◄── OxiPulse local  │
 │  │  │ (WebSocket/gRPC│  │ (localhost:4317)         │  │    (modo local)    │
@@ -155,35 +155,24 @@ Sin cambios significativos. El `endpoint` que recibe `init()` vendrá seteado a 
 
 ### 3. Scripts de instalación
 
-El `install.sh` y `install.ps1` ganan una pregunta interactiva (o flag `--mode`):
+Los scripts `install.sh` e `install.ps1` instalan el agente como servicio de sistema:
 
 ```bash
-curl -fsSL https://install.oxipulse.dev | bash -s -- --mode direct --endpoint ... --token ...
-curl -fsSL https://install.oxipulse.dev | bash -s -- --mode local_agent --token ...
+curl -fsSL https://install.securyblack.dev/sb-agent | bash -s -- --token <TOKEN>
 ```
 
 Flujo interactivo:
-```
-[oxipulse] How do you want to send metrics?
-  1) Direct to SecuryBlack Cloud (requires endpoint + token)
-  2) Through the local SecuryBlack Agent (auto-configured)
-Choice [1/2]: _
-```
-
-Si elige (2):
-- Escribe `mode = "local_agent"` en config.toml
-- Omite `endpoint`
-- Pregunta solo el `token`
+El instalador genera `/etc/securyblack/agent.toml` con el token y arranca el servicio `securyblack-agent`.
 
 ---
 
 ## 📁 Estructura del Proyecto Conduit (Rust)
 
 ```
-sb-conduit/
+sb-agent/
 ├── Cargo.toml
 ├── proto/
-│   └── tunnel.proto           ← Definición del servicio de túnel SB
+│   └── tunnel/v1/tunnel.proto ← Definición del Conduit Protocol
 ├── src/
 │   ├── main.rs                # Entry point, Windows service wrapper, init logging
 │   ├── config.rs              # TOML + env vars, similar a OxiPulse
@@ -224,6 +213,7 @@ sb-conduit/
 | TLS | `rustls` + `tokio-rustls` |
 | Serialización config | `serde` + `toml` |
 | Serialización protobuf | `prost` (via tonic-build) |
+| Docker client (deploys) | `bollard` |
 | Auto-update | `self_update` (mismo crate que OxiPulse) |
 | Windows service | `windows-service` |
 | Sysinfo para inventario | `sysinfo` |
@@ -233,16 +223,15 @@ sb-conduit/
 ## 📋 Plan de Desarrollo por Fases
 
 ### Fase 0: Infraestructura compartida
-- Crear el repo `sb-conduit`
 - Setup de CI/CD (release cross-platform)
-- Definir `proto/tunnel.proto` y publicar como artefacto compartido
+- Definir `proto/tunnel/v1/tunnel.proto` (Conduit Protocol) y publicar como artefacto compartido
 - **Paralelamente:** modificar OxiPulse para soportar `mode = local_agent` (cambios mínimos descritos arriba)
 
 ### Fase 1: Túnel + Proxy OTLP (MVP)
 - Implementar `tunnel::grpc` (cliente bidireccional, reconnect, heartbeat)
 - Implementar `proxy::otlp` (servidor gRPC local en `localhost:4317`)
 - Implementar `bridge` (recibe OTLP del proxy, empaqueta en `TunnelMessage`, envía por túnel)
-- Implementar lado servidor del túnel en Go (nuevo servicio en `api-internal` o nuevo servicio)
+- Implementar lado servidor del túnel en Go (dentro de `securyblack-edge-gateway`)
 
 ### Fase 2: Orquestación
 - `registry`: detectar si OxiPulse está corriendo localmente (chequear proceso, puerto 4317, socket Unix)
@@ -252,19 +241,19 @@ sb-conduit/
 
 ### Fase 3: Comandos y Gestión
 - `management::commands`: ejecución remota de comandos en el servidor (tail logs, restart service, etc.)
-- Configuración de OxiPulse desde Conduit (si OxiPulse no tiene endpoint, Conduit le dice "estoy aquí")
+- Configuración de OxiPulse desde el Agent (si OxiPulse no tiene endpoint, el Agent inyecta `localhost:4317`)
 - Auto-instalación de agentes (ej: "instala OxiPulse si no está")
 
 ### Fase 4: Más agentes
 - Definir contrato genérico para que cualquier agente SB se registre en Conduit
-- Primer agente adicional que use el túnel (ej: log collector, security scanner)
+- Integrar FerroSentry como agente adicional que use el túnel
 
 ---
 
 ## ❓ Decisiones pendientes
 
-1. **¿Dónde vive el Tunnel Server en la nube?** ¿Servicio nuevo independiente, integrado en `api-internal` (FastAPI), o en `oxi-pulse-ingestor` (Go)?
-2. **¿Qué autenticación usará Conduit para registrarse en el túnel?** ¿Un token de servidor tipo `sb_srv_xxx` distinto al token de agente de OxiPulse?
+1. **✅ Resuelto:** El Tunnel Server vive en `securyblack-edge-gateway` (Go), junto al ingestor OTLP.
+2. **✅ Resuelto:** Reutiliza el token de la tabla `agents` (mismo que usa OxiPulse).
 3. **¿Empezamos por el MVP (Fase 1) directamente?** Es decir: túnel + proxy OTLP local + modificación mínima de OxiPulse, sin orquestación ni comandos todavía.
 
 ---
