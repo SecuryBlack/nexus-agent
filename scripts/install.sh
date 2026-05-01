@@ -116,7 +116,7 @@ if $INSTALL_OXIPULSE; then
         warn "OxiPulse parece estar ya instalado. Saltando."
     else
         # Invocar instalador oficial de OxiPulse
-        OXI_URL="https://install.oxipulse.io"
+        OXI_URL="https://install.oxipulse.dev"
         if curl -fsSL "$OXI_URL" &>/dev/null; then
             info "Invocando instalador oficial de OxiPulse ..."
             export OXIPULSE_TOKEN="$TOKEN"

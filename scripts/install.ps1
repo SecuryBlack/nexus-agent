@@ -125,7 +125,7 @@ if ($installOxiPulse) {
     Write-Header "Instalando OxiPulse"
     try {
         # OxiPulse tiene su propio instalador one-liner
-        $oxiPulseUrl = "https://install.oxipulse.io"
+        $oxiPulseUrl = "https://install.oxipulse.dev"
         Write-Host "Invocando instalador oficial de OxiPulse ..."
         # El script de OxiPulse acepta -Token
         $oxiScript = Invoke-RestMethod -Uri $oxiPulseUrl -UseBasicParsing
