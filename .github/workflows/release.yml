@@ -30,6 +30,7 @@ jobs:
             os: windows-latest
             archive_ext: zip
             cross: false
+            features: --features windows-service
 
     steps:
       - name: Checkout
@@ -60,7 +61,7 @@ jobs:
       - name: Build release binary
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} ${{ matrix.features }}
 
       # ── Linux packaging ──────────────────────────────────────────────────
       - name: Package (Linux tar.gz)
