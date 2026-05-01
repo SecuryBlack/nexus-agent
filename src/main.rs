@@ -2,8 +2,11 @@ pub mod proto {
     tonic::include_proto!("securyblack.tunnel.v1");
 }
 
+mod config;
+mod registry;
 mod tunnel;
 
+use std::sync::Arc;
 use tunnel::TunnelClient;
 
 #[tokio::main]
@@ -21,14 +24,32 @@ async fn main() {
     let _ = dotenvy::dotenv();
 
     tracing_subscriber::fmt::init();
-    tracing::info!("sb-agent v0.1.0 starting…");
+    tracing::info!("sb-agent v{} starting…", env!("CARGO_PKG_VERSION"));
 
-    let endpoint = std::env::var("SB_AGENT_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:4317".to_string());
-    let token = std::env::var("SB_AGENT_TOKEN")
-        .unwrap_or_else(|_| "dev_token".to_string());
+    // Cargar configuración persistente
+    let cfg = match config::AgentConfig::load() {
+        Ok(Some(c)) => Arc::new(c),
+        Ok(None) => {
+            let path = config::AgentConfig::config_path();
+            tracing::error!(
+                "No configuration found at {}. Please run the installer first.",
+                path.display()
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            tracing::error!("Failed to load configuration: {}", e);
+            std::process::exit(1);
+        }
+    };
 
-    let client = TunnelClient::new(endpoint, token);
+    tracing::info!(
+        endpoint = %cfg.endpoint,
+        enabled_agents = ?cfg.enabled_agents,
+        "configuration loaded"
+    );
+
+    let client = TunnelClient::new(cfg.endpoint.clone(), cfg.token.clone(), cfg.enabled_agents.clone());
 
     // El cliente de túnel corre en foreground porque es el core del agente.
     // Cuando el túnel cae, reconecta automáticamente.
