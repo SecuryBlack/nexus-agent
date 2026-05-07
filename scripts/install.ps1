@@ -17,7 +17,7 @@ param(
     [string]$Token = "",
 
     [Parameter(Mandatory = $false)]
-    [string]$Endpoint = "https://edge.securyblack.com:443",
+    [string]$Endpoint = "https://ingest.securyblack.com:443",
 
     [Parameter(Mandatory = $false)]
     [string]$InstallDir = "$env:ProgramFiles\SecuryBlack",

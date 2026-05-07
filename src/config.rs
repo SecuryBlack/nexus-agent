@@ -98,7 +98,7 @@ pub struct AgentConfig {
 }
 
 fn default_endpoint() -> String {
-    "https://edge.securyblack.com:443".to_string()
+    "https://ingest.securyblack.com:443".to_string()
 }
 
 impl Default for AgentConfig {
