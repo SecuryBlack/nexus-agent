@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
 
 use crate::config::AgentKind;
@@ -63,9 +63,17 @@ impl TunnelClient {
         &self,
         bridge_rx: &mut mpsc::Receiver<TunnelEnvelope>,
     ) -> anyhow::Result<()> {
-        let channel = Channel::from_shared(self.endpoint.clone())?
-            .connect()
-            .await?;
+        let endpoint = self.endpoint.clone();
+        let channel = if endpoint.starts_with("https://") {
+            Channel::from_shared(endpoint)?
+                .tls_config(ClientTlsConfig::new().with_native_roots())?
+                .connect()
+                .await?
+        } else {
+            Channel::from_shared(endpoint)?
+                .connect()
+                .await?
+        };
 
         let mut client = TunnelServiceClient::new(channel);
 
