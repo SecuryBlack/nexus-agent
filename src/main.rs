@@ -11,6 +11,31 @@ mod updater;
 use std::sync::Arc;
 use tunnel::TunnelClient;
 
+fn init_logging() {
+    #[cfg(windows)]
+    {
+        let log_dir = r"C:\ProgramData\SecuryBlack";
+        let file_appender = tracing_appender::rolling::daily(log_dir, "nexus-agent.log");
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .with_writer(file_appender)
+            .with_ansi(false)
+            .init();
+    }
+    #[cfg(not(windows))]
+    {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .init();
+    }
+}
+
 async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
     // Cargar variables desde .env (busca en directorio del ejecutable y actual)
     if let Ok(exe_path) = std::env::current_exe() {
@@ -24,7 +49,7 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
     // Fallback: directorio actual
     let _ = dotenvy::dotenv();
 
-    tracing_subscriber::fmt::init();
+    init_logging();
     tracing::info!("nexus-agent v{} starting…", env!("CARGO_PKG_VERSION"));
 
     // Cargar configuración persistente
