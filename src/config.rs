@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 /// Agente local que puede ser orquestado por nexus-agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum AgentKind {
     OxiPulse,
     FerroSentry,
