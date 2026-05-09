@@ -109,6 +109,16 @@ $dataDir = "$env:ProgramData\SecuryBlack"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
+# Detener servicio previo si existe antes de descargar (el binario puede estar bloqueado)
+$serviceName = "NexusAgent"
+$existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+if ($existing) {
+    Write-Warn "El servicio $serviceName está en ejecución. Deteniendo antes de actualizar ..."
+    Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
+    sc.exe delete $serviceName | Out-Null
+    Start-Sleep -Seconds 3
+}
+
 # Descargar binario
 Write-Host "Descargando nexus-agent desde $downloadUrl ..."
 try {
@@ -200,15 +210,6 @@ Write-Header "Registrando servicio Windows"
 
 $serviceName = "NexusAgent"
 $displayName = "Nexus Agent"
-
-# Eliminar servicio previo si existe
-$existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-if ($existing) {
-    Write-Warn "El servicio $serviceName ya existe. Deteniendo y eliminando ..."
-    Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
-    sc.exe delete $serviceName | Out-Null
-    Start-Sleep -Seconds 2
-}
 
 # Crear servicio
 $null = New-Service `
