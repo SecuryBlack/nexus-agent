@@ -101,6 +101,7 @@ impl TunnelClient {
             payload: Some(Payload::Hello(ClientHello {
                 agent_id: String::new(), // se asignará en el gateway vía token
                 token: self.token.clone(),
+                agent_type: "nexus".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 local_agents: agent_infos,
                 os: std::env::consts::OS.to_string(),

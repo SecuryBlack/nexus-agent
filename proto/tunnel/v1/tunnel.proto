@@ -59,25 +59,30 @@ message ClientHello {
   // y el gateway lo asignará vinculándolo al token.
   string agent_id = 1;
 
-  // Token de la tabla agents (mismo que usa OxiPulse).
+  // Server token (one token per server, shared by all agents on that server).
   string token = 2;
 
-  // Versión del binario sb-agent (ej: "0.1.0").
-  string version = 3;
+  // Agent type: "nexus", "oxipulse", "ferrosentry", etc.
+  string agent_type = 3;
 
-  // Agentes locales detectados en este servidor (OxiPulse, FerroSentry, etc.).
-  repeated AgentInfo local_agents = 4;
+  // Versión del agente (ej: "0.2.0").
+  string version = 4;
+
+  // DEPRECATED: Agentes locales detectados (ahora cada agente se reporta individualmente).
+  // Este campo se eliminará en la próxima versión del protocolo.
+  repeated AgentInfo local_agents = 5 [deprecated = true];
 
   // Información del host para mostrar en el dashboard.
-  string os = 5;        // "linux", "windows", "darwin"
-  string arch = 6;      // "x86_64", "aarch64"
-  string hostname = 7;  // nombre del servidor
+  string os = 6;        // "linux", "windows", "darwin"
+  string arch = 7;      // "x86_64", "aarch64"
+  string hostname = 8;  // nombre del servidor
 }
 
 message ServerHello {
   bool   accepted  = 1;
   string reason    = 2;  // motivo del rechazo si accepted == false
   string session_id = 3; // ID de sesión para trazabilidad en logs
+  string agent_id  = 4;  // ID asignado al agente por el gateway
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
