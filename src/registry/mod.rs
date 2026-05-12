@@ -198,6 +198,8 @@ fn guess_binary_from_config_dir(config_path: &std::path::Path, binary_name: &str
         if let Some(parent) = dir.parent() {
             candidates.push(parent.join(binary_name));
         }
+        // OxiPulse se instala en C:\Program Files\OxiPulse por defecto
+        candidates.push(PathBuf::from(r"C:\Program Files\OxiPulse").join(binary_name));
     }
 
     for c in &candidates {
