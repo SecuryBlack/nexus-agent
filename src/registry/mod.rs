@@ -44,10 +44,14 @@ pub fn detect(kind: AgentKind) -> LocalAgent {
     system.refresh_all();
 
     // 1. Buscar proceso en ejecución
+    // On Linux, idle processes are in Sleep state (S), not Run (R).
+    // Consider both Run and Sleep as "running" since Sleep is normal for
+    // agents waiting on timers/IO.
     let process_name = kind.as_str();
     let mut found_running = false;
     for process in system.processes_by_name(process_name.as_ref()) {
-        if process.status() == ProcessStatus::Run {
+        let status = process.status();
+        if status == ProcessStatus::Run || status == ProcessStatus::Sleep {
             found_running = true;
             break;
         }
