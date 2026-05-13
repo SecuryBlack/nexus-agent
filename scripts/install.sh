@@ -41,7 +41,7 @@ detect_arch() {
 ask_yes_no() {
     local prompt="$1"
     local resp
-    read -rp "$prompt [S/n]: " resp
+    read -rp "$prompt [S/n]: " resp </dev/tty
     [[ -z "$resp" || "$resp" =~ ^[SsYy]$ ]]
 }
 
@@ -55,7 +55,7 @@ info "=== Nexus Agent - Instalador Linux/macOS ==="
 
 # Token
 if [[ -z "${TOKEN:-}" ]]; then
-    read -rp "Introduce tu token de SecuryBlack: " TOKEN
+    read -rp "Introduce tu token de SecuryBlack: " TOKEN </dev/tty
     if [[ -z "$TOKEN" ]]; then
         err "Token requerido."
         exit 1
