@@ -3,6 +3,7 @@ pub mod proto {
 }
 
 mod config;
+mod management;
 mod proxy;
 mod registry;
 mod tunnel;
@@ -74,6 +75,8 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
         enabled_agents = ?cfg.enabled_agents,
         "configuration loaded"
     );
+
+    management::patch_agent_configs(&cfg.enabled_agents);
 
     updater::start_daily_check();
 
