@@ -47,9 +47,13 @@ pub fn detect(kind: AgentKind) -> LocalAgent {
     // On Linux, idle processes are in Sleep state (S), not Run (R).
     // Consider both Run and Sleep as "running" since Sleep is normal for
     // agents waiting on timers/IO.
-    let process_name = kind.as_str();
+    let process_name = match kind {
+        AgentKind::OxiPulse => "oxipulse",
+        AgentKind::FerroSentry => "ferro-sentry",
+        AgentKind::CupraFlow => "cupraflow",
+    };
     let mut found_running = false;
-    for process in system.processes_by_name(process_name.as_ref()) {
+    for process in system.processes_by_name(std::ffi::OsStr::new(process_name)) {
         let status = process.status();
         if status == ProcessStatus::Run || status == ProcessStatus::Sleep {
             found_running = true;
