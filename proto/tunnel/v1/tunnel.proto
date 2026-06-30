@@ -47,6 +47,9 @@ message TunnelEnvelope {
 
     // Heartbeat de agentes locales (agente → cloud)
     AgentStatus       agent_status  = 10;
+
+    // Eventos de seguridad (agente → cloud)
+    bytes             security_event_payload = 11;
   }
 }
 
@@ -178,3 +181,20 @@ message CommandResponse {
   int32  exit_code  = 5;
   int64  duration_ms = 6;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local Security Ingestion Service
+// ─────────────────────────────────────────────────────────────────────────────
+
+service SecurityService {
+  rpc SendEvent(SecurityEventRequest) returns (SecurityEventResponse);
+}
+
+message SecurityEventRequest {
+  string event_json = 1;
+}
+
+message SecurityEventResponse {
+  bool success = 1;
+}
+

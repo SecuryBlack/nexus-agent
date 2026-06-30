@@ -21,11 +21,15 @@ impl AgentKind {
 
     /// Nombre del binario en esta plataforma.
     pub fn binary_name(&self) -> String {
-        let base = self.as_str();
+        let base = match self {
+            AgentKind::OxiPulse => "oxipulse".to_string(),
+            AgentKind::FerroSentry => "ferro-sentry".to_string(),
+            AgentKind::CupraFlow => "cupraflow".to_string(),
+        };
         if cfg!(windows) {
             format!("{}.exe", base)
         } else {
-            base.to_string()
+            base
         }
     }
 

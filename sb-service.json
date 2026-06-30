@@ -1,0 +1,7 @@
+{
+  "name": "Nexus Agent",
+  "description": "Agente en Rust para orquestación, túneles y CI/CD",
+  "type": "rust",
+  "role": "agent",
+  "start": "cargo run"
+}
