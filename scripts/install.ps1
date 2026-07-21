@@ -28,6 +28,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Set TLS 1.2 protocol for PowerShell 5.1 compatibility on Windows Server
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+
 # ─── Helpers ────────────────────────────────────────────────────────────────
 function Write-Header($text) {
     Write-Host "`n=== $text ===" -ForegroundColor Cyan
@@ -150,28 +153,12 @@ if ($installOxiPulse) {
 if ($installFerroSentry) {
     Write-Header "Instalando FerroSentry"
     try {
-        $fsUrl = "$ReleaseUrl/ferro-sentry-x86_64-pc-windows-msvc.exe"
-        $fsDir = "$env:ProgramFiles\FerroSentry"
-        $fsBin = Join-Path $fsDir "ferro-sentry.exe"
-        $fsData = "$env:ProgramData\ferro-sentry"
-
-        New-Item -ItemType Directory -Force -Path $fsDir | Out-Null
-        New-Item -ItemType Directory -Force -Path $fsData | Out-Null
-
-        Write-Host "Descargando FerroSentry ..."
-        Invoke-WebRequest -Uri $fsUrl -OutFile $fsBin -UseBasicParsing
-
-        # Escribir config básica
-        $fsConfig = @"
-token = "$Token"
-mode = "agent"
-api_url = "https://api.securyblack.com"
-log_level = "info"
-"@
-        $fsConfig | Set-Content -Path (Join-Path $fsData "config.toml") -Encoding UTF8
-
-        Write-Success "FerroSentry instalado en $fsDir"
-        Write-Warn "FerroSentry no tiene servicio Windows aún. Ejecútalo manualmente o crea una tarea programada."
+        $fsUrl = "https://raw.githubusercontent.com/securyblack/ferro-sentry/main/scripts/install.ps1"
+        Write-Host "Invocando instalador oficial de FerroSentry ..."
+        $fsScript = Invoke-RestMethod -Uri $fsUrl -UseBasicParsing
+        $sb = [scriptblock]::Create($fsScript)
+        & $sb -Token $Token -Mode "local_agent" -Endpoint "http://localhost:8080"
+        Write-Success "FerroSentry instalado."
     } catch {
         Write-Warn "No se pudo instalar FerroSentry automáticamente."
         Write-Warn $_.Exception.Message
@@ -196,10 +183,11 @@ if ($installCupraFlow) {
 # ─── Configurar nexus-agent ─────────────────────────────────────────────────
 Write-Header "Configurando nexus-agent"
 
+$formattedAgents = ($enabledAgents | ForEach-Object { '"' + $_ + '"' }) -join ', '
 $agentToml = @"
 token = "$Token"
 endpoint = "$Endpoint"
-enabled_agents = [$($enabledAgents | ForEach-Object { '"' + $_ + '"' } | Join-String -Separator ', ')]
+enabled_agents = [$formattedAgents]
 "@
 
 $agentToml | Set-Content -Path (Join-Path $dataDir "agent.toml") -Encoding UTF8
