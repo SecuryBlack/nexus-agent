@@ -185,6 +185,7 @@ Write-Header "Configurando nexus-agent"
 
 $formattedAgents = ($enabledAgents | ForEach-Object { '"' + $_ + '"' }) -join ', '
 $agentToml = @"
+version = "0.1.0"
 token = "$Token"
 endpoint = "$Endpoint"
 enabled_agents = [$formattedAgents]

@@ -89,6 +89,10 @@ impl std::str::FromStr for AgentKind {
 /// Configuración persistente del nexus-agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
+    /// Versión del nexus-agent.
+    #[serde(default)]
+    pub version: Option<String>,
+
     /// Token de autenticación contra SecuryBlack Cloud.
     pub token: String,
 
@@ -108,6 +112,7 @@ fn default_endpoint() -> String {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
             token: String::new(),
             endpoint: default_endpoint(),
             enabled_agents: Vec::new(),
@@ -137,7 +142,12 @@ impl AgentConfig {
             return Ok(None);
         }
         let contents = std::fs::read_to_string(&path)?;
-        let config: AgentConfig = toml::from_str(&contents)?;
+        let mut config: AgentConfig = toml::from_str(&contents)?;
+        let current_pkg_version = env!("CARGO_PKG_VERSION");
+        if config.version.as_deref() != Some(current_pkg_version) {
+            config.version = Some(current_pkg_version.to_string());
+            let _ = config.save();
+        }
         Ok(Some(config))
     }
 
