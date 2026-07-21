@@ -269,3 +269,10 @@ OxiPulse es el agente de monitorización en Rust que Conduit debe integrar.
 - **Auto-update:** `self_update` crate desde GitHub Releases
 - **Windows service:** `windows-service` crate
 - **Offline buffer:** ring buffer con backoff exponencial cuando no hay conectividad TCP
+
+---
+
+## License
+
+Nexus Agent is licensed under the [Apache License, Version 2.0](LICENSE).
+
