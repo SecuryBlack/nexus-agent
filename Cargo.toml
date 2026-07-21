@@ -1,6 +1,6 @@
 [package]
 name = "nexus-agent"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2024"
 license = "Apache-2.0"
 description = "SecuryBlack agent — tunnel, orchestrator and CI/CD deployer for client servers"
