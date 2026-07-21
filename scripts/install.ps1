@@ -157,7 +157,7 @@ if ($installFerroSentry) {
         Write-Host "Invocando instalador oficial de FerroSentry ..."
         $fsScript = Invoke-RestMethod -Uri $fsUrl -UseBasicParsing
         $sb = [scriptblock]::Create($fsScript)
-        & $sb -Token $Token -Mode "local_agent" -Endpoint "http://localhost:8080"
+        & $sb -Token $Token -Mode "agent" -Endpoint "http://localhost:4317"
         Write-Success "FerroSentry instalado."
     } catch {
         Write-Warn "No se pudo instalar FerroSentry automáticamente."
