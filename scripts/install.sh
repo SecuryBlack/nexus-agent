@@ -91,20 +91,27 @@ ARCH="$(detect_arch)"
 BINARY_NAME="nexus-agent-${ARCH}"
 DOWNLOAD_URL="${RELEASE_URL}/${BINARY_NAME}"
 BINARY_PATH="${INSTALL_DIR}/nexus-agent"
+TMP_BINARY="/tmp/${BINARY_NAME}-tmp"
 
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$CONFIG_DIR"
 
+if systemctl is-active --quiet securyblack-agent 2>/dev/null; then
+    info "Deteniendo servicio securyblack-agent previo..."
+    systemctl stop securyblack-agent || true
+fi
+
 info "Descargando nexus-agent desde $DOWNLOAD_URL ..."
 if command -v curl &>/dev/null; then
-    curl -fsSL "$DOWNLOAD_URL" -o "$BINARY_PATH"
+    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_BINARY"
 elif command -v wget &>/dev/null; then
-    wget -q "$DOWNLOAD_URL" -O "$BINARY_PATH"
+    wget -q "$DOWNLOAD_URL" -O "$TMP_BINARY"
 else
     err "Se requiere curl o wget."
     exit 1
 fi
 
+mv -f "$TMP_BINARY" "$BINARY_PATH"
 chmod +x "$BINARY_PATH"
 ok "Binario instalado en $BINARY_PATH"
 
@@ -132,12 +139,14 @@ if $INSTALL_FERROSENTRY; then
     FS_URL="${RELEASE_URL}/ferro-sentry-${ARCH}"
     FS_DIR="/usr/local/bin"
     FS_BIN="${FS_DIR}/ferro-sentry"
+    FS_TMP="/tmp/ferro-sentry-${ARCH}-tmp"
     FS_DATA="/etc/ferro-sentry"
 
     mkdir -p "$FS_DATA"
 
     info "Descargando FerroSentry ..."
-    if curl -fsSL "$FS_URL" -o "$FS_BIN" 2>/dev/null; then
+    if curl -fsSL "$FS_URL" -o "$FS_TMP" 2>/dev/null; then
+        mv -f "$FS_TMP" "$FS_BIN"
         chmod +x "$FS_BIN"
         cat > "${FS_DATA}/config.toml" <<EOF
 token = "${TOKEN}"
@@ -156,12 +165,14 @@ if $INSTALL_CUPRAFLOW; then
     info "Instalando CupraFlow"
     CF_URL="${RELEASE_URL}/cupraflow-${ARCH}"
     CF_BIN="/usr/local/bin/cupraflow"
+    CF_TMP="/tmp/cupraflow-${ARCH}-tmp"
     CF_DATA="/etc/cupraflow"
 
     mkdir -p "$CF_DATA"
 
     info "Descargando CupraFlow ..."
-    if curl -fsSL "$CF_URL" -o "$CF_BIN" 2>/dev/null; then
+    if curl -fsSL "$CF_URL" -o "$CF_TMP" 2>/dev/null; then
+        mv -f "$CF_TMP" "$CF_BIN"
         chmod +x "$CF_BIN"
         cat > "${CF_DATA}/config.toml" <<EOF
 [server]
