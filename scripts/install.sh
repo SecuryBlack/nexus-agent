@@ -155,7 +155,34 @@ api_url = "https://api.securyblack.com"
 log_level = "info"
 EOF
         ok "FerroSentry instalado en $FS_BIN"
-        warn "FerroSentry no tiene servicio systemd aún. Ejecútalo manualmente o crea un timer."
+
+        # Registrar servicio systemd para FerroSentry
+        FS_SERVICE_FILE="/etc/systemd/system/ferrosentry.service"
+        cat > "$FS_SERVICE_FILE" <<EOF
+[Unit]
+Description=FerroSentry - Agente EDR y Auditoría de Postura
+After=network-online.target securyblack-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${FS_BIN}
+WorkingDirectory=${FS_DATA}
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable ferrosentry 2>/dev/null || true
+        if systemctl restart ferrosentry 2>/dev/null; then
+            ok "Servicio systemd ferrosentry iniciado correctamente."
+        else
+            warn "No se pudo iniciar el servicio ferrosentry automáticamente. Verifica con: journalctl -fu ferrosentry"
+        fi
     else
         warn "No se pudo descargar FerroSentry. Instálalo manualmente."
     fi
