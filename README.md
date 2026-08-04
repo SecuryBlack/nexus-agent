@@ -2,7 +2,7 @@
 
 Agente SecuryBlack para servidores cliente. Proporciona un túnel persistente y seguro, orquesta agentes locales (OxiPulse, FerroSentry) y gestiona despliegues CI/CD desde repos de GitHub.
 
-> **Estado:** Planificación / Diseño. Este documento recoge la arquitectura propuesta para desarrollo futuro.
+> **Estado:** En desarrollo activo. Túnel persistente, proxy OTLP local, registry de agentes y sincronización de configuración (Fases 0-2 de este roadmap) ya están implementados en `src/`. Comandos remotos y el contrato genérico multi-agente (Fases 3-4) siguen pendientes. El resto de este documento describe la arquitectura y el plan de fases.
 
 ---
 
