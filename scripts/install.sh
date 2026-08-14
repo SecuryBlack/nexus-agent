@@ -4,9 +4,14 @@ set -euo pipefail
 # =============================================================================
 # Nexus Agent (nexus-agent) — Instalador Linux/macOS
 # =============================================================================
-# Pregunta al usuario qué agentes locales desea instalar y configura el
-# nexus-agent como servicio systemd. Si no se elige ningún agente, opera
-# únicamente como túnel hacia SecuryBlack Cloud.
+# Instala nexus-agent como servicio systemd y, opcionalmente, los agentes
+# locales. Si no se elige ningún agente, opera únicamente como túnel hacia
+# SecuryBlack Cloud.
+#
+# Uso desatendido (el que genera el panel):
+#   curl -fsSL https://install.securyblack.com/linux | sudo bash -s -- --token <TOKEN>
+#
+# Sin --token cae al modo interactivo y lo pide por consola.
 # =============================================================================
 
 TOKEN=""
@@ -14,6 +19,13 @@ ENDPOINT="https://ingest.securyblack.com:443"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/securyblack"
 RELEASE_URL="https://github.com/securyblack/nexus-agent/releases/latest/download"
+
+# Agentes instalados por defecto en modo desatendido. CupraFlow queda fuera
+# a propósito: solo se instala si se pide explícitamente con --agents.
+DEFAULT_AGENTS="oxipulse,ferrosentry"
+
+AGENTS_ARG=""
+ASSUME_YES=false
 
 # ─── Colores ────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -38,6 +50,14 @@ detect_arch() {
     esac
 }
 
+# El script se ejecuta casi siempre vía `curl | bash`, donde stdin es el propio
+# script. Las preguntas leen de /dev/tty, que no existe en CI o en un pipe sin
+# terminal: en ese caso no se puede preguntar nada.
+# Comprobar `-r /dev/tty` no basta: la entrada puede existir y ser legible
+# pero fallar al abrirse ("No such device or address") cuando no hay terminal
+# de control. La única comprobación fiable es intentar abrirlo.
+has_tty() { (exec 3</dev/tty) 2>/dev/null; }
+
 ask_yes_no() {
     local prompt="$1"
     local resp
@@ -45,9 +65,46 @@ ask_yes_no() {
     [[ -z "$resp" || "$resp" =~ ^[SsYy]$ ]]
 }
 
+usage() {
+    cat <<EOF
+Instalador de Nexus Agent (SecuryBlack)
+
+Uso:
+  curl -fsSL https://install.securyblack.com/linux | sudo bash -s -- [opciones]
+
+Opciones:
+  --token <TOKEN>      Token del servidor (lo genera el panel al crearlo).
+                       Si se omite, se pide de forma interactiva.
+  --agents <lista>     Agentes locales separados por comas: oxipulse,ferrosentry,cupraflow
+                       Usa "none" para instalar solo el túnel.
+                       Por defecto en modo desatendido: ${DEFAULT_AGENTS}
+  --endpoint <URL>     Endpoint de ingesta (por defecto: ${ENDPOINT})
+  -y, --yes            No preguntar nada; usa los agentes por defecto.
+  -h, --help           Muestra esta ayuda.
+EOF
+}
+
+# ─── Argumentos ─────────────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --token)     TOKEN="${2:-}";     shift 2 ;;
+        --token=*)   TOKEN="${1#*=}";    shift   ;;
+        --agents)    AGENTS_ARG="${2:-}"; shift 2 ;;
+        --agents=*)  AGENTS_ARG="${1#*=}"; shift ;;
+        --endpoint)  ENDPOINT="${2:-}";  shift 2 ;;
+        --endpoint=*) ENDPOINT="${1#*=}"; shift  ;;
+        -y|--yes)    ASSUME_YES=true;    shift   ;;
+        -h|--help)   usage; exit 0 ;;
+        --)          shift ;;
+        *)           err "Opción desconocida: $1"; usage >&2; exit 1 ;;
+    esac
+done
+
 # ─── Validaciones ───────────────────────────────────────────────────────────
 if [[ "$EUID" -ne 0 ]]; then
-    err "Este script debe ejecutarse como root (sudo)."
+    err "Este script necesita permisos de root."
+    err "Ejecútalo así:"
+    err "  curl -fsSL https://install.securyblack.com/linux | sudo bash -s -- --token <TU_TOKEN>"
     exit 1
 fi
 
@@ -55,23 +112,47 @@ info "=== Nexus Agent - Instalador Linux/macOS ==="
 
 # Token
 if [[ -z "${TOKEN:-}" ]]; then
-    read -rp "Introduce tu token de SecuryBlack: " TOKEN </dev/tty
+    if has_tty; then
+        read -rp "Introduce tu token de SecuryBlack: " TOKEN </dev/tty
+    fi
     if [[ -z "$TOKEN" ]]; then
-        err "Token requerido."
+        err "Token requerido. Pásalo con --token <TOKEN> o ejecuta el script en una terminal interactiva."
+        err "El token se muestra en el panel al crear el servidor."
         exit 1
     fi
 fi
 
-# ─── Preguntas interactivas ─────────────────────────────────────────────────
-info "Selección de agentes locales"
-
+# ─── Selección de agentes ───────────────────────────────────────────────────
 INSTALL_OXIPULSE=false
 INSTALL_FERROSENTRY=false
 INSTALL_CUPRAFLOW=false
 
-ask_yes_no "¿Instalar OxiPulse?"    && INSTALL_OXIPULSE=true
-ask_yes_no "¿Instalar FerroSentry?" && INSTALL_FERROSENTRY=true
-ask_yes_no "¿Instalar CupraFlow?"   && INSTALL_CUPRAFLOW=true
+# Sin --agents: se pregunta si hay terminal, y si no (o con --yes) se usan los
+# valores por defecto. Así `curl | sudo bash -s -- --token X` no se queda colgado.
+if [[ -z "$AGENTS_ARG" ]]; then
+    if $ASSUME_YES || ! has_tty; then
+        AGENTS_ARG="$DEFAULT_AGENTS"
+        info "Modo desatendido: instalando ${AGENTS_ARG}"
+    else
+        info "Selección de agentes locales"
+        ask_yes_no "¿Instalar OxiPulse?"    && INSTALL_OXIPULSE=true
+        ask_yes_no "¿Instalar FerroSentry?" && INSTALL_FERROSENTRY=true
+        ask_yes_no "¿Instalar CupraFlow?"   && INSTALL_CUPRAFLOW=true
+    fi
+fi
+
+if [[ -n "$AGENTS_ARG" ]]; then
+    IFS=',' read -ra _requested <<< "$AGENTS_ARG"
+    for _a in "${_requested[@]}"; do
+        case "${_a// /}" in
+            oxipulse)    INSTALL_OXIPULSE=true ;;
+            ferrosentry) INSTALL_FERROSENTRY=true ;;
+            cupraflow)   INSTALL_CUPRAFLOW=true ;;
+            none|"")     ;;
+            *)           err "Agente desconocido: ${_a}"; exit 1 ;;
+        esac
+    done
+fi
 
 ENABLED_AGENTS=()
 $INSTALL_OXIPULSE    && ENABLED_AGENTS+=("oxipulse")
@@ -226,7 +307,9 @@ fi
 info "Configurando nexus-agent"
 
 TOML_AGENTS=""
-for a in "${ENABLED_AGENTS[@]}"; do
+# `${arr[@]}` sobre un array vacío aborta con `set -u` en bash < 4.4, y el
+# caso "solo túnel" (--agents none) llega aquí con la lista vacía.
+for a in ${ENABLED_AGENTS[@]+"${ENABLED_AGENTS[@]}"}; do
     [[ -n "$TOML_AGENTS" ]] && TOML_AGENTS+=", "
     TOML_AGENTS+="\"${a}\""
 done

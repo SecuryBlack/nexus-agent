@@ -10,11 +10,25 @@
 
 .EXAMPLE
     .\install.ps1 -Token "sb_xxx"
+
+.EXAMPLE
+    # Instalación desatendida en una línea (la que genera el panel).
+    # `irm ... | iex` no admite parámetros, por eso se crea un scriptblock.
+    & ([scriptblock]::Create((irm https://install.securyblack.com/windows))) -Token "sb_xxx"
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
     [string]$Token = "",
+
+    # Agentes locales separados por comas: oxipulse,ferrosentry,cupraflow
+    # "none" instala solo el túnel. Vacío = preguntar (o usar defecto con -Yes).
+    [Parameter(Mandatory = $false)]
+    [string]$Agents = "",
+
+    # No preguntar nada; usa los agentes por defecto.
+    [Parameter(Mandatory = $false)]
+    [switch]$Yes,
 
     [Parameter(Mandatory = $false)]
     [string]$Endpoint = "https://ingest.securyblack.com:443",
@@ -68,25 +82,61 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit 1
 }
 
+# Agentes instalados por defecto en modo desatendido. CupraFlow queda fuera
+# a propósito: solo se instala si se pide explícitamente con -Agents.
+$DefaultAgents = "oxipulse,ferrosentry"
+
+# `iex` ejecuta sin consola interactiva asociada en algunos hosts; Read-Host
+# fallaría. Si no se puede preguntar, hay que venir con -Token.
+$canPrompt = -not [Console]::IsInputRedirected
+
 if ([string]::IsNullOrWhiteSpace($Token)) {
-    $Token = Read-Host "Introduce tu token de SecuryBlack"
+    if ($canPrompt) {
+        $Token = Read-Host "Introduce tu token de SecuryBlack"
+    }
     if ([string]::IsNullOrWhiteSpace($Token)) {
-        Write-Error "Token requerido."
+        Write-Error "Token requerido. Pásalo con -Token <TOKEN>."
+        Write-Error "El token se muestra en el panel al crear el servidor."
         exit 1
     }
 }
 
-# ─── Preguntas interactivas ─────────────────────────────────────────────────
-Write-Header "Selección de agentes locales"
-
+# ─── Selección de agentes ───────────────────────────────────────────────────
 function Ask-YesNo($prompt) {
     $resp = Read-Host "$prompt [S/n]"
     return ($resp -eq "" -or $resp -match "^[SsYy]")
 }
 
-$installOxiPulse    = Ask-YesNo "¿Instalar OxiPulse?"
-$installFerroSentry = Ask-YesNo "¿Instalar FerroSentry?"
-$installCupraFlow   = Ask-YesNo "¿Instalar CupraFlow?"
+$installOxiPulse    = $false
+$installFerroSentry = $false
+$installCupraFlow   = $false
+
+# Sin -Agents: se pregunta si hay consola, y si no (o con -Yes) se usan los
+# valores por defecto, para que la instalación en una línea no se cuelgue.
+if ([string]::IsNullOrWhiteSpace($Agents)) {
+    if ($Yes -or -not $canPrompt) {
+        $Agents = $DefaultAgents
+        Write-Host "Modo desatendido: instalando $Agents"
+    } else {
+        Write-Header "Selección de agentes locales"
+        $installOxiPulse    = Ask-YesNo "¿Instalar OxiPulse?"
+        $installFerroSentry = Ask-YesNo "¿Instalar FerroSentry?"
+        $installCupraFlow   = Ask-YesNo "¿Instalar CupraFlow?"
+    }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($Agents)) {
+    foreach ($a in $Agents.Split(',')) {
+        switch ($a.Trim().ToLower()) {
+            "oxipulse"    { $installOxiPulse = $true }
+            "ferrosentry" { $installFerroSentry = $true }
+            "cupraflow"   { $installCupraFlow = $true }
+            "none"        { }
+            ""            { }
+            default       { Write-Error "Agente desconocido: $a"; exit 1 }
+        }
+    }
+}
 
 $enabledAgents = @()
 if ($installOxiPulse)    { $enabledAgents += "oxipulse" }
