@@ -14,11 +14,20 @@ set -euo pipefail
 # Sin --token cae al modo interactivo y lo pide por consola.
 # =============================================================================
 
+SB_AGENT_LABEL="nexus-agent"
+LIB_URL="https://raw.githubusercontent.com/securyblack/sb-agent-core/main/scripts/install-lib.sh"
+LIB_TMP="$(mktemp)"
+curl -fsSL "$LIB_URL" -o "$LIB_TMP" || { echo "ERROR: could not fetch install-lib.sh from sb-agent-core" >&2; exit 1; }
+# shellcheck source=/dev/null
+source "$LIB_TMP"
+rm -f "$LIB_TMP"
+
 TOKEN=""
 ENDPOINT="https://ingest.securyblack.com:443"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/securyblack"
-RELEASE_URL="https://github.com/securyblack/nexus-agent/releases/latest/download"
+GITHUB_REPO="securyblack/nexus-agent"
+BINARY_NAME="nexus-agent"
 
 # Agentes instalados por defecto en modo desatendido. CupraFlow queda fuera
 # a propósito: solo se instala si se pide explícitamente con --agents.
@@ -27,29 +36,7 @@ DEFAULT_AGENTS="oxipulse,ferrosentry"
 AGENTS_ARG=""
 ASSUME_YES=false
 
-# ─── Colores ────────────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
-info()  { echo -e "${CYAN}[INFO]${NC} $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-err()   { echo -e "${RED}[ERR]${NC} $*" >&2; }
-
-# ─── Helpers ────────────────────────────────────────────────────────────────
-detect_arch() {
-    local arch
-    arch="$(uname -m)"
-    case "$arch" in
-        x86_64)  echo "x86_64-unknown-linux-gnu" ;;
-        aarch64) echo "aarch64-unknown-linux-gnu" ;;
-        *)       err "Arquitectura no soportada: $arch"; exit 1 ;;
-    esac
-}
-
+# ─── Helpers propios de Nexus (orquestación multi-agente, no van en la lib) ──
 # El script se ejecuta casi siempre vía `curl | bash`, donde stdin es el propio
 # script. Las preguntas leen de /dev/tty, que no existe en CI o en un pipe sin
 # terminal: en ese caso no se puede preguntar nada.
@@ -96,19 +83,15 @@ while [[ $# -gt 0 ]]; do
         -y|--yes)    ASSUME_YES=true;    shift   ;;
         -h|--help)   usage; exit 0 ;;
         --)          shift ;;
-        *)           err "Opción desconocida: $1"; usage >&2; exit 1 ;;
+        *)           sb_die "Opción desconocida: $1"; usage >&2 ;;
     esac
 done
 
 # ─── Validaciones ───────────────────────────────────────────────────────────
-if [[ "$EUID" -ne 0 ]]; then
-    err "Este script necesita permisos de root."
-    err "Ejecútalo así:"
-    err "  curl -fsSL https://install.securyblack.com/linux | sudo bash -s -- --token <TU_TOKEN>"
-    exit 1
-fi
+sb_require_root
+sb_require_cmds curl tar systemctl
 
-info "=== Nexus Agent - Instalador Linux/macOS ==="
+sb_info "=== Nexus Agent - Instalador Linux/macOS ==="
 
 # Token
 if [[ -z "${TOKEN:-}" ]]; then
@@ -116,9 +99,7 @@ if [[ -z "${TOKEN:-}" ]]; then
         read -rp "Introduce tu token de SecuryBlack: " TOKEN </dev/tty
     fi
     if [[ -z "$TOKEN" ]]; then
-        err "Token requerido. Pásalo con --token <TOKEN> o ejecuta el script en una terminal interactiva."
-        err "El token se muestra en el panel al crear el servidor."
-        exit 1
+        sb_die "Token requerido. Pásalo con --token <TOKEN> o ejecuta el script en una terminal interactiva. El token se muestra en el panel al crear el servidor."
     fi
 fi
 
@@ -132,9 +113,9 @@ INSTALL_CUPRAFLOW=false
 if [[ -z "$AGENTS_ARG" ]]; then
     if $ASSUME_YES || ! has_tty; then
         AGENTS_ARG="$DEFAULT_AGENTS"
-        info "Modo desatendido: instalando ${AGENTS_ARG}"
+        sb_info "Modo desatendido: instalando ${AGENTS_ARG}"
     else
-        info "Selección de agentes locales"
+        sb_info "Selección de agentes locales"
         ask_yes_no "¿Instalar OxiPulse?"    && INSTALL_OXIPULSE=true
         ask_yes_no "¿Instalar FerroSentry?" && INSTALL_FERROSENTRY=true
         ask_yes_no "¿Instalar CupraFlow?"   && INSTALL_CUPRAFLOW=true
@@ -149,7 +130,7 @@ if [[ -n "$AGENTS_ARG" ]]; then
             ferrosentry) INSTALL_FERROSENTRY=true ;;
             cupraflow)   INSTALL_CUPRAFLOW=true ;;
             none|"")     ;;
-            *)           err "Agente desconocido: ${_a}"; exit 1 ;;
+            *)           sb_die "Agente desconocido: ${_a}" ;;
         esac
     done
 fi
@@ -160,151 +141,79 @@ $INSTALL_FERROSENTRY && ENABLED_AGENTS+=("ferrosentry")
 $INSTALL_CUPRAFLOW   && ENABLED_AGENTS+=("cupraflow")
 
 if [[ ${#ENABLED_AGENTS[@]} -eq 0 ]]; then
-    warn "No se seleccionó ningún agente local. El nexus-agent operará únicamente como túnel."
+    sb_warn "No se seleccionó ningún agente local. El nexus-agent operará únicamente como túnel."
 else
-    ok "Agentes seleccionados: ${ENABLED_AGENTS[*]}"
+    sb_success "Agentes seleccionados: ${ENABLED_AGENTS[*]}"
 fi
 
 # ─── Instalar nexus-agent ───────────────────────────────────────────────────
-info "Instalando Nexus Agent (nexus-agent)"
+sb_info "Instalando Nexus Agent (nexus-agent)"
 
-ARCH="$(detect_arch)"
-BINARY_NAME="nexus-agent-${ARCH}"
-DOWNLOAD_URL="${RELEASE_URL}/${BINARY_NAME}"
-BINARY_PATH="${INSTALL_DIR}/nexus-agent"
-TMP_BINARY="/tmp/${BINARY_NAME}-tmp"
+TARGET="$(sb_detect_arch_linux)"
+LATEST_VERSION="$(sb_fetch_latest_version "$GITHUB_REPO")"
 
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$CONFIG_DIR"
 
 if systemctl is-active --quiet securyblack-agent 2>/dev/null; then
-    info "Deteniendo servicio securyblack-agent previo..."
+    sb_info "Deteniendo servicio securyblack-agent previo..."
     systemctl stop securyblack-agent || true
 fi
 
-info "Descargando nexus-agent desde $DOWNLOAD_URL ..."
-if command -v curl &>/dev/null; then
-    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_BINARY"
-elif command -v wget &>/dev/null; then
-    wget -q "$DOWNLOAD_URL" -O "$TMP_BINARY"
-else
-    err "Se requiere curl o wget."
-    exit 1
-fi
+# El release.yml (compartido vía sb-agent-core) empaqueta el binario en un
+# .tar.gz, no lo publica suelto. La versión anterior de este script descargaba
+# "nexus-agent-${ARCH}" a pelo — un asset que el release nunca produce.
+ASSET_NAME="${BINARY_NAME}-${TARGET}.tar.gz"
+DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_VERSION}/${ASSET_NAME}"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
-mv -f "$TMP_BINARY" "$BINARY_PATH"
-chmod +x "$BINARY_PATH"
-ok "Binario instalado en $BINARY_PATH"
+sb_download_and_verify "$DOWNLOAD_URL" "${TMP_DIR}/${ASSET_NAME}"
+sb_install_binary "${TMP_DIR}/${ASSET_NAME}" "$BINARY_NAME" "$INSTALL_DIR"
+BINARY_PATH="${INSTALL_DIR}/${BINARY_NAME}"
 
 # ─── Instalar agentes seleccionados ─────────────────────────────────────────
 
 if $INSTALL_OXIPULSE; then
-    info "Instalando OxiPulse"
+    sb_info "Instalando OxiPulse"
     if command -v oxipulse &>/dev/null || [[ -f /etc/oxipulse/config.toml ]]; then
-        warn "OxiPulse parece estar ya instalado. Saltando."
+        sb_warn "OxiPulse parece estar ya instalado. Saltando."
     else
         # Invocar instalador oficial de OxiPulse en modo local_agent
         OXI_URL="https://install.oxipulse.dev"
         if curl -fsSL "$OXI_URL" &>/dev/null; then
-            info "Invocando instalador oficial de OxiPulse ..."
+            sb_info "Invocando instalador oficial de OxiPulse ..."
             bash -c "$(curl -fsSL $OXI_URL)" -- --mode local_agent --token "$TOKEN"
-            ok "OxiPulse instalado."
+            sb_success "OxiPulse instalado."
         else
-            warn "No se pudo contactar el instalador de OxiPulse. Instálalo manualmente."
+            sb_warn "No se pudo contactar el instalador de OxiPulse. Instálalo manualmente."
         fi
     fi
 fi
 
 if $INSTALL_FERROSENTRY; then
-    info "Instalando FerroSentry"
-    FS_URL="${RELEASE_URL}/ferro-sentry-${ARCH}"
-    FS_DIR="/usr/local/bin"
-    FS_BIN="${FS_DIR}/ferro-sentry"
-    FS_TMP="/tmp/ferro-sentry-${ARCH}-tmp"
-    FS_DATA="/etc/ferro-sentry"
-
-    mkdir -p "$FS_DATA"
-
-    info "Descargando FerroSentry ..."
-    if curl -fsSL "$FS_URL" -o "$FS_TMP" 2>/dev/null; then
-        mv -f "$FS_TMP" "$FS_BIN"
-        chmod +x "$FS_BIN"
-        cat > "${FS_DATA}/config.toml" <<EOF
-token = "${TOKEN}"
-mode = "agent"
-api_url = "https://api.securyblack.com"
-log_level = "info"
-EOF
-        ok "FerroSentry instalado en $FS_BIN"
-
-        # Registrar servicio systemd para FerroSentry
-        FS_SERVICE_FILE="/etc/systemd/system/ferrosentry.service"
-        cat > "$FS_SERVICE_FILE" <<EOF
-[Unit]
-Description=FerroSentry - Agente EDR y Auditoría de Postura
-After=network-online.target securyblack-agent.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=${FS_BIN}
-WorkingDirectory=${FS_DATA}
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-        systemctl daemon-reload
-        systemctl enable ferrosentry 2>/dev/null || true
-        if systemctl restart ferrosentry 2>/dev/null; then
-            ok "Servicio systemd ferrosentry iniciado correctamente."
-        else
-            warn "No se pudo iniciar el servicio ferrosentry automáticamente. Verifica con: journalctl -fu ferrosentry"
-        fi
+    sb_info "Instalando FerroSentry"
+    if command -v ferro-sentry &>/dev/null || [[ -f /etc/ferro-sentry/config.toml ]]; then
+        sb_warn "FerroSentry parece estar ya instalado. Saltando."
     else
-        warn "No se pudo descargar FerroSentry. Instálalo manualmente."
+        FS_URL="https://install.ferrosentry.dev"
+        if curl -fsSL "$FS_URL" &>/dev/null; then
+            sb_info "Invocando instalador oficial de FerroSentry ..."
+            bash -c "$(curl -fsSL $FS_URL)" -- --mode agent --endpoint "http://localhost:4317" --token "$TOKEN"
+            sb_success "FerroSentry instalado."
+        else
+            sb_warn "No se pudo contactar el instalador de FerroSentry. Instálalo manualmente."
+        fi
     fi
 fi
 
 if $INSTALL_CUPRAFLOW; then
-    info "Instalando CupraFlow"
-    CF_URL="${RELEASE_URL}/cupraflow-${ARCH}"
-    CF_BIN="/usr/local/bin/cupraflow"
-    CF_TMP="/tmp/cupraflow-${ARCH}-tmp"
-    CF_DATA="/etc/cupraflow"
-
-    mkdir -p "$CF_DATA"
-
-    info "Descargando CupraFlow ..."
-    if curl -fsSL "$CF_URL" -o "$CF_TMP" 2>/dev/null; then
-        mv -f "$CF_TMP" "$CF_BIN"
-        chmod +x "$CF_BIN"
-        cat > "${CF_DATA}/config.toml" <<EOF
-[server]
-port = 8080
-bind_address = "0.0.0.0"
-
-[logging]
-level = "info"
-format = "pretty"
-
-[service]
-name = "CupraFlow"
-description = "Agente de gestión de red"
-startup = "auto"
-EOF
-        ok "CupraFlow instalado en $CF_BIN"
-        warn "CupraFlow no tiene servicio systemd aún. Ejecútalo manualmente."
-    else
-        warn "No se pudo descargar CupraFlow. Instálalo manualmente."
-    fi
+    sb_warn "CupraFlow no publica todavía build para Linux (su release.yml solo compila Windows)."
+    sb_warn "Sáltalo por ahora o instálalo manualmente cuando exista un target Linux."
 fi
 
 # ─── Configurar nexus-agent ─────────────────────────────────────────────────
-info "Configurando nexus-agent"
+sb_info "Configurando nexus-agent"
 
 TOML_AGENTS=""
 # `${arr[@]}` sobre un array vacío aborta con `set -u` en bash < 4.4, y el
@@ -320,52 +229,23 @@ endpoint = "${ENDPOINT}"
 enabled_agents = [${TOML_AGENTS}]
 EOF
 
-ok "Configuración escrita en ${CONFIG_DIR}/agent.toml"
+sb_success "Configuración escrita en ${CONFIG_DIR}/agent.toml"
 
 # ─── Registrar servicio systemd ─────────────────────────────────────────────
-info "Registrando servicio systemd"
-
-SERVICE_NAME="securyblack-agent"
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-
-cat > "$SERVICE_FILE" <<EOF
-[Unit]
-Description=Nexus Agent - Túnel y orquestador de agentes locales
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=${BINARY_PATH}
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-
-if systemctl start "$SERVICE_NAME"; then
-    ok "Servicio ${SERVICE_NAME} iniciado correctamente."
-else
-    warn "El servicio no se inició automáticamente. Verifica con: journalctl -u ${SERVICE_NAME}"
-fi
+sb_write_systemd_unit "securyblack-agent" "Nexus Agent - Túnel y orquestador de agentes locales" "$BINARY_PATH" "" 5
+sb_enable_start_service "securyblack-agent"
 
 # ─── Resumen ────────────────────────────────────────────────────────────────
-info "=== Instalación completada ==="
+sb_info "=== Instalación completada ==="
 cat <<EOF
 Ruta del binario:   ${BINARY_PATH}
 Configuración:      ${CONFIG_DIR}/agent.toml
-Servicio:           ${SERVICE_NAME}
+Servicio:           securyblack-agent
 
 Agentes habilitados: ${#ENABLED_AGENTS[@]} - ${ENABLED_AGENTS[*]:-ninguno (solo túnel)}
 
 Comandos útiles:
-  systemctl status ${SERVICE_NAME}
-  journalctl -fu ${SERVICE_NAME}
+  systemctl status securyblack-agent
+  journalctl -fu securyblack-agent
   ${BINARY_PATH}   (modo consola)
 EOF

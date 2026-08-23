@@ -31,56 +31,31 @@ param(
     [switch]$Yes,
 
     [Parameter(Mandatory = $false)]
-    [string]$Endpoint = "https://ingest.securyblack.com:443",
-
-    [Parameter(Mandatory = $false)]
-    [string]$InstallDir = "$env:ProgramFiles\SecuryBlack",
-
-    [Parameter(Mandatory = $false)]
-    [string]$ReleaseUrl = "https://github.com/securyblack/nexus-agent/releases/latest/download"
+    [string]$Endpoint = "https://ingest.securyblack.com:443"
 )
 
 $ErrorActionPreference = "Stop"
 
-# Set TLS 1.2 protocol for PowerShell 5.1 compatibility on Windows Server
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+$SbAgentLabel = "nexus-agent"
+$libUrl = "https://raw.githubusercontent.com/securyblack/sb-agent-core/main/scripts/install-lib.ps1"
+$libTmp = Join-Path ([System.IO.Path]::GetTempPath()) "sb-agent-core-install-lib.ps1"
+Invoke-WebRequest -Uri $libUrl -OutFile $libTmp -UseBasicParsing
+. $libTmp
 
-# ─── Helpers ────────────────────────────────────────────────────────────────
-function Write-Header($text) {
-    Write-Host "`n=== $text ===" -ForegroundColor Cyan
+$GithubRepo  = "securyblack/nexus-agent"
+$BinaryName  = "nexus-agent.exe"
+$InstallDir  = "$env:ProgramFiles\SecuryBlack"
+$DataDir     = "$env:ProgramData\SecuryBlack"
+$ServiceName = "NexusAgent"
+
+# ─── Helpers propios de Nexus (orquestación multi-agente, no van en la lib) ──
+function Ask-YesNo($prompt) {
+    $resp = Read-Host "$prompt [S/n]"
+    return ($resp -eq "" -or $resp -match "^[SsYy]")
 }
 
-function Write-Success($text) {
-    Write-Host "[OK] $text" -ForegroundColor Green
-}
-
-function Write-Warn($text) {
-    Write-Host "[WARN] $text" -ForegroundColor Yellow
-}
-
-function Write-Error($text) {
-    Write-Host "[ERR] $text" -ForegroundColor Red
-}
-
-function Test-Command($cmd) {
-    return [bool](Get-Command $cmd -ErrorAction SilentlyContinue)
-}
-
-function Get-Architecture {
-    # nexus-agent solo soporta x86_64 por ahora
-    if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
-        return "x86_64-pc-windows-msvc"
-    }
-    throw "Arquitectura no soportada: $($env:PROCESSOR_ARCHITECTURE)"
-}
-
-# ─── Validaciones ───────────────────────────────────────────────────────────
-Write-Header "Nexus Agent - Instalador Windows"
-
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Error "Este script debe ejecutarse como Administrador."
-    exit 1
-}
+Write-Host ""
+Write-Host "=== Nexus Agent - Instalador Windows ===" -ForegroundColor Cyan
 
 # Agentes instalados por defecto en modo desatendido. CupraFlow queda fuera
 # a propósito: solo se instala si se pide explícitamente con -Agents.
@@ -95,30 +70,21 @@ if ([string]::IsNullOrWhiteSpace($Token)) {
         $Token = Read-Host "Introduce tu token de SecuryBlack"
     }
     if ([string]::IsNullOrWhiteSpace($Token)) {
-        Write-Error "Token requerido. Pásalo con -Token <TOKEN>."
-        Write-Error "El token se muestra en el panel al crear el servidor."
-        exit 1
+        Invoke-SbFail "Token requerido. Pásalo con -Token <TOKEN>. El token se muestra en el panel al crear el servidor."
     }
 }
 
 # ─── Selección de agentes ───────────────────────────────────────────────────
-function Ask-YesNo($prompt) {
-    $resp = Read-Host "$prompt [S/n]"
-    return ($resp -eq "" -or $resp -match "^[SsYy]")
-}
-
 $installOxiPulse    = $false
 $installFerroSentry = $false
 $installCupraFlow   = $false
 
-# Sin -Agents: se pregunta si hay consola, y si no (o con -Yes) se usan los
-# valores por defecto, para que la instalación en una línea no se cuelgue.
 if ([string]::IsNullOrWhiteSpace($Agents)) {
     if ($Yes -or -not $canPrompt) {
         $Agents = $DefaultAgents
         Write-Host "Modo desatendido: instalando $Agents"
     } else {
-        Write-Header "Selección de agentes locales"
+        Write-Host "`n=== Selección de agentes locales ===" -ForegroundColor Cyan
         $installOxiPulse    = Ask-YesNo "¿Instalar OxiPulse?"
         $installFerroSentry = Ask-YesNo "¿Instalar FerroSentry?"
         $installCupraFlow   = Ask-YesNo "¿Instalar CupraFlow?"
@@ -133,7 +99,7 @@ if (-not [string]::IsNullOrWhiteSpace($Agents)) {
             "cupraflow"   { $installCupraFlow = $true }
             "none"        { }
             ""            { }
-            default       { Write-Error "Agente desconocido: $a"; exit 1 }
+            default       { Invoke-SbFail "Agente desconocido: $a" }
         }
     }
 }
@@ -144,150 +110,102 @@ if ($installFerroSentry) { $enabledAgents += "ferrosentry" }
 if ($installCupraFlow)   { $enabledAgents += "cupraflow" }
 
 if ($enabledAgents.Count -eq 0) {
-    Write-Warn "No se seleccionó ningún agente local. El nexus-agent operará únicamente como túnel."
+    Write-SbWarn "No se seleccionó ningún agente local. El nexus-agent operará únicamente como túnel."
 } else {
-    Write-Success "Agentes seleccionados: $($enabledAgents -join ', ')"
+    Write-SbSuccess "Agentes seleccionados: $($enabledAgents -join ', ')"
 }
 
 # ─── Instalar nexus-agent ───────────────────────────────────────────────────
-Write-Header "Instalando Nexus Agent (nexus-agent)"
+Write-Host "`n=== Instalando Nexus Agent (nexus-agent) ===" -ForegroundColor Cyan
 
-$arch = Get-Architecture
-$binaryName = "nexus-agent-$arch.exe"
-$downloadUrl = "$ReleaseUrl/$binaryName"
-$binaryPath = Join-Path $InstallDir "nexus-agent.exe"
-$dataDir = "$env:ProgramData\SecuryBlack"
+$target = Get-SbArchTarget
+$version = Get-SbLatestVersion -GithubRepo $GithubRepo
 
-# Crear directorios
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
-# Detener servicio previo si existe antes de descargar (el binario puede estar bloqueado)
-$serviceName = "NexusAgent"
-$existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-if ($existing) {
-    Write-Warn "El servicio $serviceName está en ejecución. Deteniendo antes de actualizar ..."
-    Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
-    sc.exe delete $serviceName | Out-Null
-    Start-Sleep -Seconds 3
-}
+$tmpDir = [System.IO.Path]::GetTempPath() + [System.IO.Path]::GetRandomFileName()
+New-Item -ItemType Directory -Path $tmpDir | Out-Null
 
-# Descargar binario
-Write-Host "Descargando nexus-agent desde $downloadUrl ..."
 try {
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $binaryPath -UseBasicParsing
-    Write-Success "Binario descargado a $binaryPath"
-} catch {
-    Write-Error "No se pudo descargar el binario. Verifica la URL o tu conexión."
-    throw
-}
+    $assetName = "nexus-agent-$target.zip"
+    $zipPath = Get-SbReleaseAsset -GithubRepo $GithubRepo -Version $version -AssetName $assetName -TmpDir $tmpDir
+    Install-SbBinaryFromZip -ZipPath $zipPath -BinaryName $BinaryName -InstallDir $InstallDir -ServiceName $ServiceName
+    $binaryPath = Join-Path $InstallDir $BinaryName
 
-# ─── Instalar agentes seleccionados ─────────────────────────────────────────
-
-if ($installOxiPulse) {
-    Write-Header "Instalando OxiPulse"
-    try {
-        # OxiPulse tiene su propio instalador one-liner
-        $oxiPulseUrl = "https://install.oxipulse.dev"
-        Write-Host "Invocando instalador oficial de OxiPulse ..."
-        $oxiScript = Invoke-RestMethod -Uri $oxiPulseUrl -UseBasicParsing
-        $sb = [scriptblock]::Create($oxiScript)
-        & $sb -Token $Token -Mode "local_agent"
-        Write-Success "OxiPulse instalado."
-    } catch {
-        Write-Warn "No se pudo instalar OxiPulse automáticamente. Instálalo manualmente."
-        Write-Warn $_.Exception.Message
+    # ─── Instalar agentes seleccionados ─────────────────────────────────────
+    if ($installOxiPulse) {
+        Write-Host "`n=== Instalando OxiPulse ===" -ForegroundColor Cyan
+        try {
+            $oxiPulseUrl = "https://install.oxipulse.dev"
+            $oxiScript = Invoke-RestMethod -Uri $oxiPulseUrl -UseBasicParsing
+            $sb = [scriptblock]::Create($oxiScript)
+            & $sb -Token $Token -Mode "local_agent"
+            Write-SbSuccess "OxiPulse instalado."
+        } catch {
+            Write-SbWarn "No se pudo instalar OxiPulse automáticamente. Instálalo manualmente."
+            Write-SbWarn $_.Exception.Message
+        }
     }
-}
 
-if ($installFerroSentry) {
-    Write-Header "Instalando FerroSentry"
-    try {
-        $fsUrl = "https://raw.githubusercontent.com/securyblack/ferro-sentry/main/scripts/install.ps1"
-        Write-Host "Invocando instalador oficial de FerroSentry ..."
-        $fsScript = Invoke-RestMethod -Uri $fsUrl -UseBasicParsing
-        $sb = [scriptblock]::Create($fsScript)
-        & $sb -Token $Token -Mode "agent" -Endpoint "http://localhost:4317"
-        Write-Success "FerroSentry instalado."
-    } catch {
-        Write-Warn "No se pudo instalar FerroSentry automáticamente."
-        Write-Warn $_.Exception.Message
+    if ($installFerroSentry) {
+        Write-Host "`n=== Instalando FerroSentry ===" -ForegroundColor Cyan
+        try {
+            $fsUrl = "https://install.ferrosentry.dev"
+            $fsScript = Invoke-RestMethod -Uri $fsUrl -UseBasicParsing
+            $sb = [scriptblock]::Create($fsScript)
+            & $sb -Token $Token -Mode "agent" -Endpoint "http://localhost:4317"
+            Write-SbSuccess "FerroSentry instalado."
+        } catch {
+            Write-SbWarn "No se pudo instalar FerroSentry automáticamente."
+            Write-SbWarn $_.Exception.Message
+        }
     }
-}
 
-if ($installCupraFlow) {
-    Write-Header "Instalando CupraFlow"
-    try {
-        # CupraFlow tiene su propio install.ps1 en el repo
-        $cfUrl = "https://raw.githubusercontent.com/securyblack/cupra-flow/main/scripts/install.ps1"
-        Write-Host "Invocando instalador oficial de CupraFlow ..."
-        $cfScript = Invoke-RestMethod -Uri $cfUrl -UseBasicParsing
-        Invoke-Expression $cfScript
-        Write-Success "CupraFlow instalado."
-    } catch {
-        Write-Warn "No se pudo instalar CupraFlow automáticamente. Instálalo manualmente."
-        Write-Warn $_.Exception.Message
+    if ($installCupraFlow) {
+        Write-Host "`n=== Instalando CupraFlow ===" -ForegroundColor Cyan
+        try {
+            $cfUrl = "https://raw.githubusercontent.com/securyblack/cupra-flow/main/scripts/install.ps1"
+            $cfScript = Invoke-RestMethod -Uri $cfUrl -UseBasicParsing
+            Invoke-Expression $cfScript
+            Write-SbSuccess "CupraFlow instalado."
+        } catch {
+            Write-SbWarn "No se pudo instalar CupraFlow automáticamente. Instálalo manualmente."
+            Write-SbWarn $_.Exception.Message
+        }
     }
-}
 
-# ─── Configurar nexus-agent ─────────────────────────────────────────────────
-Write-Header "Configurando nexus-agent"
+    # ─── Configurar nexus-agent ──────────────────────────────────────────────
+    Write-Host "`n=== Configurando nexus-agent ===" -ForegroundColor Cyan
 
-$formattedAgents = ($enabledAgents | ForEach-Object { '"' + $_ + '"' }) -join ', '
-$agentToml = @"
-version = "0.1.0"
+    $formattedAgents = ($enabledAgents | ForEach-Object { '"' + $_ + '"' }) -join ', '
+    @"
+version = "$version"
 token = "$Token"
 endpoint = "$Endpoint"
 enabled_agents = [$formattedAgents]
-"@
+"@ | Set-Content -Path (Join-Path $DataDir "agent.toml") -Encoding UTF8
+    Write-SbSuccess "Configuración escrita en $DataDir\agent.toml"
 
-$agentToml | Set-Content -Path (Join-Path $dataDir "agent.toml") -Encoding UTF8
-Write-Success "Configuración escrita en $dataDir\agent.toml"
+    # ─── Registrar servicio Windows ──────────────────────────────────────────
+    Register-SbWindowsService -ServiceName $ServiceName -DisplayName "Nexus Agent" `
+        -BinaryPath "`"$binaryPath`"" `
+        -Description "Nexus Agent - Túnel y orquestador de agentes locales"
 
-# ─── Registrar servicio Windows ─────────────────────────────────────────────
-Write-Header "Registrando servicio Windows"
-
-$serviceName = "NexusAgent"
-$displayName = "Nexus Agent"
-
-# Crear servicio
-$null = New-Service `
-    -Name $serviceName `
-    -DisplayName $displayName `
-    -Description "Nexus Agent - Túnel y orquestador de agentes locales" `
-    -BinaryPathName "`"$binaryPath`"" `
-    -StartupType Automatic
-
-Write-Success "Servicio $serviceName registrado."
-
-# Configurar reinicio automático ante fallos (incluyendo exit limpio tras auto-update)
-# failureflag 1 hace que el SCM trate cualquier salida como fallo, reiniciando el servicio
-& sc.exe failure $serviceName reset= 86400 actions= restart/10000/restart/30000/restart/60000 | Out-Null
-& sc.exe failureflag $serviceName 1 | Out-Null
-Write-Success "Política de reinicio configurada para auto-updates."
-
-# Iniciar servicio
-Write-Host "Iniciando servicio ..."
-Start-Service -Name $serviceName
-Start-Sleep -Seconds 2
-$svc = Get-Service -Name $serviceName
-if ($svc.Status -eq "Running") {
-    Write-Success "Servicio $serviceName iniciado correctamente."
-} else {
-    Write-Warn "El servicio no se inició automáticamente. Estado: $($svc.Status)"
+} finally {
+    Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
 }
 
 # ─── Resumen ────────────────────────────────────────────────────────────────
-Write-Header "Instalación completada"
+Write-Host "`n=== Instalación completada ===" -ForegroundColor Cyan
 Write-Host @"
-Ruta del binario:   $binaryPath
-Configuración:      $dataDir\agent.toml
-Servicio:           $serviceName
+Ruta del binario:   $InstallDir\$BinaryName
+Configuración:      $DataDir\agent.toml
+Servicio:           $ServiceName
 
 Agentes habilitados: $(if ($enabledAgents.Count -eq 0) { "Ninguno (solo túnel)" } else { $enabledAgents -join ', ' })
 
 Comandos útiles:
-  Get-Service $serviceName
-  Restart-Service $serviceName
-  & '$binaryPath'   (modo consola, si el servicio no está corriendo)
+  Get-Service $ServiceName
+  Restart-Service $ServiceName
 "@
