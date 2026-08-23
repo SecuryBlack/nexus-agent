@@ -30,8 +30,8 @@ message TunnelEnvelope {
     // Serialización cruda de ExportMetricsServiceRequest.
     bytes             otlp_metrics_payload = 4;
 
-    // Despliegue CI/CD (cloud → agente)
-    DeployCommand     deploy_cmd    = 5;
+    // Estado deseado de un despliegue CromoForge (cloud → agente)
+    DesiredState      desired_state = 5;
 
     // Logs de build en tiempo real (agente → cloud)
     DeployLog         deploy_log    = 6;
@@ -112,40 +112,48 @@ message AgentStatus {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CI/CD — Deploy commands (cloud → agente)
+// CromoForge — Estado deseado (cloud → agente)
+//
+// Reemplaza el antiguo DeployCommand/GitPullAction/DockerBuildAction/
+// DockerComposeAction (rediseñado 2026-08-23): aquellos asumían comandos
+// imperativos, build en el host del cliente y Docker Compose — incompatible
+// con la arquitectura decidida para CromoForge (reconciliador, artefacto =
+// imagen OCI ya construida, Docker API directa, secretos sellados). Ninguno
+// de los cuatro mensajes viejos tenía un solo uso en src/, así que este
+// cambio no rompe nada existente.
+//
+// Espeja campo a campo el manifiesto TOML de CromoForge (ver
+// cromo-forge/TODO.md, sección "Contrato de estado deseado") — es la misma
+// forma para las tres fuentes (`securyblack`, `git`, `local`); esto es solo
+// cómo viaja por Conduit cuando la fuente es `securyblack`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-message DeployCommand {
-  string deployment_id = 1;  // UUID del deployment
-  string project_id    = 2;  // UUID del proyecto
+message DesiredState {
+  string app_name        = 1;
+  string image           = 2;  // ref OCI — tag inmutable o digest, nunca "latest"
+  int32  container_port  = 3;
 
-  oneof action {
-    GitPullAction       git_pull       = 3;
-    DockerBuildAction   docker_build   = 4;
-    DockerComposeAction docker_compose = 5;
-  }
+  HealthCheck    health_check = 4;
+  RolloutPolicy  rollout      = 5;
+
+  map<string, string> env             = 6;  // variables no sensibles, en claro
+  map<string, bytes>  sealed_secrets  = 7;  // nombre de variable → ciphertext sellado X25519
 }
 
-message GitPullAction {
-  string repo_url  = 1;
-  string branch    = 2;
-  string commit_sha = 3;
+message HealthCheck {
+  string path              = 1;
+  int32  interval_secs     = 2;
+  int32  timeout_secs      = 3;
+  int32  failure_threshold = 4;  // fallos consecutivos antes de disparar rollback
 }
 
-message DockerBuildAction {
-  string context_dir = 1;  // ruta relativa dentro del clone
-  string dockerfile  = 2;  // nombre del Dockerfile (default: "Dockerfile")
-  string tag         = 3;  // imagen:tag resultante
-}
-
-message DockerComposeAction {
-  string file         = 1;  // ruta al compose file (default: "docker-compose.yml")
-  string project_name = 2;  // -p project_name
-  map<string, string> env = 3;  // variables de entorno inyectadas
+message RolloutPolicy {
+  string strategy            = 1;  // "recreate" — único valor soportado en v1
+  bool   rollback_on_failure = 2;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CI/CD — Deploy feedback (agente → cloud)
+// CromoForge — Deploy feedback (agente → cloud)
 // ─────────────────────────────────────────────────────────────────────────────
 
 message DeployLog {
