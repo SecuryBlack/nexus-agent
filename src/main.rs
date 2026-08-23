@@ -94,6 +94,7 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
 
 #[cfg(windows)]
 fn main() {
+    sb_agent_core::cli::dispatch_common_args("nexus-agent", "nexus-agent", env!("CARGO_PKG_VERSION"));
     match sb_agent_core::service::windows::run_service("NexusAgent", |rx| run_agent(rx)) {
         Ok(_) => {}
         Err(e) if sb_agent_core::service::windows::is_not_started_by_scm(&e) => {
@@ -108,5 +109,6 @@ fn main() {
 
 #[cfg(not(windows))]
 fn main() {
+    sb_agent_core::cli::dispatch_common_args("nexus-agent", "nexus-agent", env!("CARGO_PKG_VERSION"));
     sb_agent_core::service::run_console(run_agent);
 }
