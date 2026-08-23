@@ -136,22 +136,24 @@ impl AgentConfig {
 
     /// Carga la configuración desde el archivo estándar.
     /// Si no existe, devuelve `None` para que el caller decida qué hacer.
+    ///
+    /// El path (`/etc/securyblack/agent.toml`, no `/etc/nexus-agent/config.toml`)
+    /// sigue siendo propio de nexus-agent — es lo que ya escriben los
+    /// instaladores — así que no usa `sb_agent_core::config::default_config_path`.
+    /// La carga en sí y la sincronización de `version` sí vienen del crate.
     pub fn load() -> anyhow::Result<Option<Self>> {
         let path = Self::config_path();
         if !path.exists() {
             return Ok(None);
         }
-        let contents = std::fs::read_to_string(&path)?;
-        let mut config: AgentConfig = toml::from_str(&contents)?;
-        let current_pkg_version = env!("CARGO_PKG_VERSION");
-        if config.version.as_deref() != Some(current_pkg_version) {
-            config.version = Some(current_pkg_version.to_string());
-            let _ = config.save();
-        }
+        let config: AgentConfig = sb_agent_core::config::load(&path)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let _ = sb_agent_core::config::sync_version_field(&path, env!("CARGO_PKG_VERSION"));
         Ok(Some(config))
     }
 
     /// Guarda la configuración en el archivo estándar.
+    #[allow(dead_code)] // ya no lo llama load() (sync_version_field lo reemplaza); queda como API pública
     pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::config_path();
         if let Some(parent) = path.parent() {

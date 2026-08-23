@@ -7,35 +7,9 @@ mod management;
 mod proxy;
 mod registry;
 mod tunnel;
-mod updater;
 
 use std::sync::Arc;
 use tunnel::TunnelClient;
-
-fn init_logging() {
-    #[cfg(windows)]
-    {
-        let log_dir = r"C:\ProgramData\SecuryBlack";
-        let file_appender = tracing_appender::rolling::daily(log_dir, "nexus-agent.log");
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-            )
-            .with_writer(file_appender)
-            .with_ansi(false)
-            .init();
-    }
-    #[cfg(not(windows))]
-    {
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-            )
-            .init();
-    }
-}
 
 async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
     // Cargar variables desde .env (busca en directorio del ejecutable y actual)
@@ -50,7 +24,11 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
     // Fallback: directorio actual
     let _ = dotenvy::dotenv();
 
-    init_logging();
+    let log_dir = config::AgentConfig::config_path()
+        .parent()
+        .expect("config path always has a parent")
+        .to_path_buf();
+    sb_agent_core::logging::init("nexus-agent", &log_dir, "info");
     tracing::info!("nexus-agent v{} starting…", env!("CARGO_PKG_VERSION"));
 
     // Cargar configuración persistente
@@ -76,9 +54,30 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
         "configuration loaded"
     );
 
+    let status_handle = sb_agent_core::status::StatusHandle::new("nexus-agent", env!("CARGO_PKG_VERSION"));
+    sb_agent_core::status::spawn_server(
+        status_handle.clone(),
+        sb_agent_core::status::default_socket_path("nexus-agent"),
+    );
+    status_handle.set_state("running");
+    status_handle.set_details(serde_json::json!({
+        "enabled_agents": cfg.enabled_agents.iter().map(|a| a.as_str()).collect::<Vec<_>>(),
+    }));
+
     management::patch_agent_configs(&cfg.enabled_agents);
 
-    updater::start_daily_check();
+    // Startup delay de 5 min (no los 60s de los demás agentes) preservado tal
+    // cual — era el drift original que motivó mover esto a sb-agent-core, y
+    // cambiarlo ahora sería una decisión de producto que nadie ha pedido.
+    sb_agent_core::updater::start_daily_check(
+        sb_agent_core::updater::UpdaterConfig::new(
+            "securyblack",
+            "nexus-agent",
+            "nexus-agent",
+            env!("CARGO_PKG_VERSION"),
+        )
+        .with_startup_delay(std::time::Duration::from_secs(300)),
+    );
 
     let client = TunnelClient::new(cfg.endpoint.clone(), cfg.token.clone(), cfg.enabled_agents.clone());
 
@@ -88,109 +87,17 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
         }
         _ = shutdown => {
             tracing::info!("shutdown signal received, stopping");
+            status_handle.set_state("stopping");
         }
     }
 }
 
-// ── Windows Service ───────────────────────────────────────────────────────────
-
-#[cfg(all(windows, feature = "windows-service"))]
-mod service {
-    use std::ffi::OsString;
-    use std::time::Duration;
-    use windows_service::{
-        define_windows_service,
-        service::{
-            ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
-            ServiceType,
-        },
-        service_control_handler::{self, ServiceControlHandlerResult},
-        service_dispatcher,
-    };
-
-    const SERVICE_NAME: &str = "NexusAgent";
-
-    define_windows_service!(ffi_service_main, service_main);
-
-    pub fn start() -> Result<(), windows_service::Error> {
-        service_dispatcher::start(SERVICE_NAME, ffi_service_main)
-    }
-
-    fn service_main(_arguments: Vec<OsString>) {
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-        let shutdown_tx = std::sync::Mutex::new(Some(shutdown_tx));
-
-        let status_handle = service_control_handler::register(
-            SERVICE_NAME,
-            move |control_event| match control_event {
-                ServiceControl::Stop | ServiceControl::Shutdown => {
-                    if let Ok(mut guard) = shutdown_tx.lock() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(());
-                        }
-                    }
-                    ServiceControlHandlerResult::NoError
-                }
-                ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
-                _ => ServiceControlHandlerResult::NotImplemented,
-            },
-        )
-        .expect("failed to register service control handler");
-
-        status_handle
-            .set_service_status(ServiceStatus {
-                service_type: ServiceType::OWN_PROCESS,
-                current_state: ServiceState::Running,
-                controls_accepted: ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
-                exit_code: ServiceExitCode::Win32(0),
-                checkpoint: 0,
-                wait_hint: Duration::default(),
-                process_id: None,
-            })
-            .expect("failed to set service status Running");
-
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("failed to build tokio runtime");
-
-        rt.block_on(super::run_agent(shutdown_rx));
-
-        let _ = status_handle.set_service_status(ServiceStatus {
-            service_type: ServiceType::OWN_PROCESS,
-            current_state: ServiceState::Stopped,
-            controls_accepted: ServiceControlAccept::empty(),
-            exit_code: ServiceExitCode::Win32(0),
-            checkpoint: 0,
-            wait_hint: Duration::default(),
-            process_id: None,
-        });
-    }
-}
-
-#[cfg(all(windows, feature = "windows-service"))]
-fn run_console() {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("failed to build tokio runtime");
-
-    rt.block_on(async {
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            tokio::signal::ctrl_c().await.ok();
-            let _ = shutdown_tx.send(());
-        });
-        run_agent(shutdown_rx).await;
-    });
-}
-
-#[cfg(all(windows, feature = "windows-service"))]
+#[cfg(windows)]
 fn main() {
-    match service::start() {
+    match sb_agent_core::service::windows::run_service("NexusAgent", |rx| run_agent(rx)) {
         Ok(_) => {}
-        Err(windows_service::Error::Winapi(e)) if e.raw_os_error() == Some(1063) => {
-            run_console();
+        Err(e) if sb_agent_core::service::windows::is_not_started_by_scm(&e) => {
+            sb_agent_core::service::run_console(run_agent);
         }
         Err(e) => {
             eprintln!("[nexus-agent] service error: {e}");
@@ -199,13 +106,7 @@ fn main() {
     }
 }
 
-#[cfg(not(all(windows, feature = "windows-service")))]
-#[tokio::main]
-async fn main() {
-    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        let _ = shutdown_tx.send(());
-    });
-    run_agent(shutdown_rx).await;
+#[cfg(not(windows))]
+fn main() {
+    sb_agent_core::service::run_console(run_agent);
 }
