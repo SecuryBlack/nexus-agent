@@ -38,8 +38,35 @@ pub struct LocalAgent {
     pub install_path: Option<PathBuf>,
 }
 
+/// Nombre de agente usado en el status socket — no siempre coincide con
+/// `AgentKind::as_str()` (FerroSentry expone su socket como "ferro-sentry",
+/// con guion, mientras que `as_str()` devuelve "ferrosentry" por compatibilidad
+/// con `enabled_agents` en `agent.toml`).
+fn socket_agent_name(kind: &AgentKind) -> &'static str {
+    match kind {
+        AgentKind::OxiPulse => "oxipulse",
+        AgentKind::FerroSentry => "ferro-sentry",
+        AgentKind::CupraFlow => "cupraflow",
+    }
+}
+
 /// Detecta el estado de un agente local.
+///
+/// Primero intenta el status socket (`sb_agent_core::status_client`) — si
+/// responde, es autoritativo: el proceso está vivo y nos da versión y estado
+/// reales sin heurísticas. Solo si el socket no responde (agente parado, o
+/// versión anterior a la retrofit que aún no lo expone) cae al escaneo de
+/// proceso/config/PATH de siempre para distinguir "parado" de "no instalado".
 pub fn detect(kind: AgentKind) -> LocalAgent {
+    if let Ok(payload) = sb_agent_core::status_client::read_once(socket_agent_name(&kind)) {
+        return LocalAgent {
+            kind,
+            version: Some(payload.version),
+            status: AgentStatus::Running,
+            install_path: kind.config_paths().into_iter().find(|p| p.exists()),
+        };
+    }
+
     let mut system = System::new_all();
     system.refresh_all();
 
