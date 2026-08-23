@@ -1,14 +1,13 @@
 use opentelemetry_proto::tonic::collector::metrics::v1::{
-    metrics_service_server::{MetricsService, MetricsServiceServer},
     ExportMetricsServiceRequest, ExportMetricsServiceResponse,
+    metrics_service_server::{MetricsService, MetricsServiceServer},
 };
 use prost::Message;
 use tonic::{Request, Response, Status};
 
 use crate::proto::security_service_server::{SecurityService, SecurityServiceServer};
 use crate::proto::{
-    tunnel_envelope::Payload,
-    SecurityEventRequest, SecurityEventResponse, TunnelEnvelope,
+    SecurityEventRequest, SecurityEventResponse, TunnelEnvelope, tunnel_envelope::Payload,
 };
 
 /// Servicio proxy OTLP que recibe métricas localmente y las reenvía al bridge.
@@ -77,11 +76,9 @@ impl SecurityService for SecurityProxyService {
 }
 
 /// Arranca el servidor proxy OTLP y Seguridad en `127.0.0.1:4317`.
-pub async fn run_proxy(
-    bridge_tx: tokio::sync::mpsc::Sender<TunnelEnvelope>,
-) -> anyhow::Result<()> {
+pub async fn run_proxy(bridge_tx: tokio::sync::mpsc::Sender<TunnelEnvelope>) -> anyhow::Result<()> {
     let addr = "127.0.0.1:4317".parse()?;
-    
+
     let metrics_service = ProxyService::new(bridge_tx.clone());
     let security_service = SecurityProxyService::new(bridge_tx);
 

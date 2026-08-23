@@ -11,14 +11,14 @@ mod tunnel;
 use std::sync::Arc;
 use tunnel::TunnelClient;
 
-async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
+async fn run_agent(shutdown: tokio::sync::oneshot::Receiver<()>) {
     // Cargar variables desde .env (busca en directorio del ejecutable y actual)
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let env_path = exe_dir.join(".env");
-            if env_path.exists() {
-                let _ = dotenvy::from_path(env_path);
-            }
+    if let Ok(exe_path) = std::env::current_exe()
+        && let Some(exe_dir) = exe_path.parent()
+    {
+        let env_path = exe_dir.join(".env");
+        if env_path.exists() {
+            let _ = dotenvy::from_path(env_path);
         }
     }
     // Fallback: directorio actual
@@ -54,7 +54,8 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
         "configuration loaded"
     );
 
-    let status_handle = sb_agent_core::status::StatusHandle::new("nexus-agent", env!("CARGO_PKG_VERSION"));
+    let status_handle =
+        sb_agent_core::status::StatusHandle::new("nexus-agent", env!("CARGO_PKG_VERSION"));
     sb_agent_core::status::spawn_server(
         status_handle.clone(),
         sb_agent_core::status::default_socket_path("nexus-agent"),
@@ -79,7 +80,11 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
         .with_startup_delay(std::time::Duration::from_secs(300)),
     );
 
-    let client = TunnelClient::new(cfg.endpoint.clone(), cfg.token.clone(), cfg.enabled_agents.clone());
+    let client = TunnelClient::new(
+        cfg.endpoint.clone(),
+        cfg.token.clone(),
+        cfg.enabled_agents.clone(),
+    );
 
     tokio::select! {
         _ = client.run() => {
@@ -94,8 +99,12 @@ async fn run_agent(mut shutdown: tokio::sync::oneshot::Receiver<()>) {
 
 #[cfg(windows)]
 fn main() {
-    sb_agent_core::cli::dispatch_common_args("nexus-agent", "nexus-agent", env!("CARGO_PKG_VERSION"));
-    match sb_agent_core::service::windows::run_service("NexusAgent", |rx| run_agent(rx)) {
+    sb_agent_core::cli::dispatch_common_args(
+        "nexus-agent",
+        "nexus-agent",
+        env!("CARGO_PKG_VERSION"),
+    );
+    match sb_agent_core::service::windows::run_service("NexusAgent", run_agent) {
         Ok(_) => {}
         Err(e) if sb_agent_core::service::windows::is_not_started_by_scm(&e) => {
             sb_agent_core::service::run_console(run_agent);
@@ -109,6 +118,10 @@ fn main() {
 
 #[cfg(not(windows))]
 fn main() {
-    sb_agent_core::cli::dispatch_common_args("nexus-agent", "nexus-agent", env!("CARGO_PKG_VERSION"));
+    sb_agent_core::cli::dispatch_common_args(
+        "nexus-agent",
+        "nexus-agent",
+        env!("CARGO_PKG_VERSION"),
+    );
     sb_agent_core::service::run_console(run_agent);
 }

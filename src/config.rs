@@ -146,8 +146,8 @@ impl AgentConfig {
         if !path.exists() {
             return Ok(None);
         }
-        let config: AgentConfig = sb_agent_core::config::load(&path)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let config: AgentConfig =
+            sb_agent_core::config::load(&path).map_err(|e| anyhow::anyhow!("{e}"))?;
         let _ = sb_agent_core::config::sync_version_field(&path, env!("CARGO_PKG_VERSION"));
         Ok(Some(config))
     }

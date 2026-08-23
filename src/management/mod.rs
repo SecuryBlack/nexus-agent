@@ -17,7 +17,10 @@ pub fn patch_agent_configs(enabled_agents: &[AgentKind]) {
 fn patch_oxipulse() {
     let config_path = oxipulse_config_path();
     if !config_path.exists() {
-        tracing::info!("OxiPulse config not found at {}, skipping patch", config_path.display());
+        tracing::info!(
+            "OxiPulse config not found at {}, skipping patch",
+            config_path.display()
+        );
         return;
     }
 
@@ -36,7 +39,10 @@ fn patch_oxipulse() {
         return;
     }
 
-    tracing::info!("Patching OxiPulse config to local_agent mode (endpoint → {})", LOCAL_ENDPOINT);
+    tracing::info!(
+        "Patching OxiPulse config to local_agent mode (endpoint → {})",
+        LOCAL_ENDPOINT
+    );
 
     let patched = patch_oxipulse_config(&contents);
     if let Err(e) = fs::write(&config_path, patched) {
@@ -145,10 +151,10 @@ fn restart_service(name: &str) {
             .args(["stop", name])
             .output();
 
-        if let Ok(o) = output {
-            if o.status.success() {
-                tracing::info!("Stopped service {}", name);
-            }
+        if let Ok(o) = output
+            && o.status.success()
+        {
+            tracing::info!("Stopped service {}", name);
         }
 
         let output = std::process::Command::new("net")

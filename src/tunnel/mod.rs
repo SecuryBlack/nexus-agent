@@ -2,14 +2,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
+use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::config::AgentKind;
 use crate::proto::{
-    tunnel_service_client::TunnelServiceClient,
-    tunnel_envelope::Payload,
     AgentInfo, AgentStatus, ClientHello, Heartbeat, ServerHello, TunnelEnvelope,
+    tunnel_envelope::Payload, tunnel_service_client::TunnelServiceClient,
 };
 use crate::registry;
 
@@ -70,9 +69,7 @@ impl TunnelClient {
                 .connect()
                 .await?
         } else {
-            Channel::from_shared(endpoint)?
-                .connect()
-                .await?
+            Channel::from_shared(endpoint)?.connect().await?
         };
 
         let mut client = TunnelServiceClient::new(channel);
@@ -97,6 +94,7 @@ impl TunnelClient {
         );
 
         // ─── Handshake: enviar ClientHello ─────────────────────────────────
+        #[allow(deprecated)] // local_agents se mantiene por compatibilidad con gateways antiguos
         let hello_msg = TunnelEnvelope {
             payload: Some(Payload::Hello(ClientHello {
                 agent_id: String::new(), // se asignará en el gateway vía token
@@ -125,10 +123,18 @@ impl TunnelClient {
             .ok_or_else(|| anyhow::anyhow!("stream closed before ServerHello"))?;
 
         match server_hello.payload {
-            Some(Payload::ServerHello(ServerHello { accepted: true, session_id, .. })) => {
+            Some(Payload::ServerHello(ServerHello {
+                accepted: true,
+                session_id,
+                ..
+            })) => {
                 tracing::info!(session_id = %session_id, "tunnel handshake accepted");
             }
-            Some(Payload::ServerHello(ServerHello { accepted: false, reason, .. })) => {
+            Some(Payload::ServerHello(ServerHello {
+                accepted: false,
+                reason,
+                ..
+            })) => {
                 anyhow::bail!("handshake rejected: {}", reason);
             }
             other => {

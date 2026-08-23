@@ -10,10 +10,12 @@ pub enum AgentStatus {
     /// Está instalado (tiene config o binario) pero no corre.
     Stopped,
     /// Se encontró evidencia de instalación previa pero no se puede determinar el estado.
+    #[allow(dead_code)]
     Installed,
     /// No se encontró rastro del agente en el sistema.
     NotInstalled,
     /// Error al consultar el estado.
+    #[allow(dead_code)]
     Error(String),
 }
 
@@ -35,6 +37,7 @@ pub struct LocalAgent {
     pub kind: AgentKind,
     pub version: Option<String>,
     pub status: AgentStatus,
+    #[allow(dead_code)]
     pub install_path: Option<PathBuf>,
 }
 
@@ -147,18 +150,18 @@ fn try_get_version_for_kind(kind: &AgentKind) -> Option<String> {
     let binary_name = kind.binary_name();
 
     // Primero: ejecutar binario --version
-    if let Some(binary) = find_in_path(&binary_name) {
-        if let Some(v) = try_get_version_from_binary(&binary) {
-            return Some(v);
-        }
+    if let Some(binary) = find_in_path(&binary_name)
+        && let Some(v) = try_get_version_from_binary(&binary)
+    {
+        return Some(v);
     }
 
     // Segundo: buscar binario cerca del config y ejecutarlo
     for config_path in kind.config_paths() {
-        if let Some(binary) = guess_binary_from_config_dir(&config_path, &binary_name) {
-            if let Some(v) = try_get_version_from_binary(&binary) {
-                return Some(v);
-            }
+        if let Some(binary) = guess_binary_from_config_dir(&config_path, &binary_name)
+            && let Some(v) = try_get_version_from_binary(&binary)
+        {
+            return Some(v);
         }
     }
 
@@ -201,11 +204,11 @@ fn try_get_version_from_config(kind: &AgentKind) -> Option<String> {
         if let Ok(contents) = std::fs::read_to_string(&path) {
             for line in contents.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("version") {
-                    if let Some(val) = trimmed.split('=').nth(1) {
-                        let val = val.trim().trim_matches('"').trim_matches('\'');
-                        return Some(val.to_string());
-                    }
+                if trimmed.starts_with("version")
+                    && let Some(val) = trimmed.split('=').nth(1)
+                {
+                    let val = val.trim().trim_matches('"').trim_matches('\'');
+                    return Some(val.to_string());
                 }
             }
         }
@@ -214,13 +217,14 @@ fn try_get_version_from_config(kind: &AgentKind) -> Option<String> {
 }
 
 /// Dado un directorio de config, intenta adivinar dónde está el binario.
-fn guess_binary_from_config_dir(config_path: &std::path::Path, binary_name: &str) -> Option<PathBuf> {
+fn guess_binary_from_config_dir(
+    config_path: &std::path::Path,
+    binary_name: &str,
+) -> Option<PathBuf> {
     let dir = config_path.parent()?;
 
-    let mut candidates: Vec<PathBuf> = vec![
-        dir.join(binary_name),
-        dir.join("bin").join(binary_name),
-    ];
+    let mut candidates: Vec<PathBuf> =
+        vec![dir.join(binary_name), dir.join("bin").join(binary_name)];
 
     #[cfg(not(windows))]
     {
