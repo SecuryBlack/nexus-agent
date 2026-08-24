@@ -2,6 +2,8 @@ use crate::config::AgentKind;
 use std::fs;
 use std::path::PathBuf;
 
+pub mod commands;
+
 const LOCAL_ENDPOINT: &str = "http://localhost:4317";
 
 pub fn patch_agent_configs(enabled_agents: &[AgentKind]) {

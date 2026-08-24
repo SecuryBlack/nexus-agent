@@ -45,6 +45,9 @@ message TunnelEnvelope {
     // Respuesta a comandos (agente → cloud)
     CommandResponse   command_resp  = 9;
 
+    // Progreso intermedio de un comando largo (agente → cloud)
+    CommandProgress   command_progress = 12;
+
     // Heartbeat de agentes locales (agente → cloud)
     AgentStatus       agent_status  = 10;
 
@@ -176,9 +179,18 @@ message DeployStatus {
 
 message CommandRequest {
   string command_id   = 1;  // UUID
-  string command_type = 2;  // "shell", "restart_service", "tail_logs"
+  string command_type = 2;  // "os_upgrade", "reboot", "restart_service", ...
   string payload      = 3;  // JSON con argumentos específicos del tipo
   int32  timeout_secs = 4;  // 0 = default del agente
+
+  // A qué agente local va destinado, dentro del servidor que recibe este
+  // envelope por el túnel. Vacío ("") = el propio nexus-agent (arrancar,
+  // parar o instalar agentes locales — lo que ya cubre `management::mod`).
+  // Con valor ("ferrosentry", "cromoforge", ...), nexus reenvía el envelope
+  // tal cual al intake local de ese agente y no lo interpreta — ver
+  // sb-agent-core/src/command_intake.rs y
+  // D:\infra\docs\design-command-intake.md para el porqué de este reparto.
+  string target_agent = 5;
 }
 
 message CommandResponse {
@@ -188,6 +200,17 @@ message CommandResponse {
   string stderr     = 4;
   int32  exit_code  = 5;
   int64  duration_ms = 6;
+}
+
+// Progreso intermedio de un `CommandRequest` de ejecución larga (p.ej.
+// `os_upgrade`, que puede tardar minutos). Un mismo `command_id` puede
+// generar cero o más `CommandProgress` antes de su `CommandResponse` final,
+// que es quien cierra la operación.
+message CommandProgress {
+  string command_id = 1;
+  string stage      = 2;  // libre por agente: "downloading" | "applying" | "verifying"
+  string message    = 3;
+  int32  percent    = 4;  // -1 si no aplica
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

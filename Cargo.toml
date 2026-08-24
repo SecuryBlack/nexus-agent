@@ -33,3 +33,11 @@ protoc-bin-vendored = "3"
 opt-level = 3
 lto = true
 strip = true
+
+# TEMPORAL: sb-agent-core está publicado en crates.io como 0.1.0, pero el
+# intake de comandos (`command_intake`, `command_intake_client`) solo está
+# en GitHub todavía (commit 8a342a9) — no se ha publicado ninguna versión
+# nueva del crate. Quitar este patch (y volver a `sb-agent-core = "0.1"`
+# normal, o a la versión que corresponda) en cuanto se publique.
+[patch.crates-io]
+sb-agent-core = { git = "https://github.com/SecuryBlack/sb-agent-core.git", rev = "8a342a9" }

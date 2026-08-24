@@ -2,7 +2,7 @@
 
 Agente SecuryBlack para servidores cliente. Proporciona un túnel persistente y seguro, orquesta agentes locales (OxiPulse, FerroSentry) y gestiona despliegues CI/CD desde repos de GitHub.
 
-> **Estado:** En desarrollo activo. Túnel persistente, proxy OTLP local, registry de agentes y sincronización de configuración (Fases 0-2 de este roadmap) ya están implementados en `src/`. Comandos remotos y el contrato genérico multi-agente (Fases 3-4) siguen pendientes. El resto de este documento describe la arquitectura y el plan de fases.
+> **Estado:** En desarrollo activo. Túnel persistente, proxy OTLP local, registry de agentes y sincronización de configuración (Fases 0-2 de este roadmap) ya están implementados en `src/`. **Fase 3 (enrutado de comandos) implementada 2026-08-24** — ver más abajo, es enrutado, no ejecución: nexus reenvía `CommandRequest` al intake local del agente destino (`FerroSentry`, `CromoForge`, ...) sin interpretarlo; solo ejecuta directamente lo dirigido a sí mismo, y ahí mismo sigue sin haber ningún `command_type` implementado todavía. El contrato genérico multi-agente (Fase 4) sigue pendiente. El resto de este documento describe la arquitectura y el plan de fases.
 
 ---
 
@@ -240,9 +240,20 @@ nexus-agent/
 - Sincronización de config remota → local (ej: la nube dice "actualiza OxiPulse")
 
 ### Fase 3: Comandos y Gestión
-- `management::commands`: ejecución remota de comandos en el servidor (tail logs, restart service, etc.)
-- Configuración de OxiPulse desde el Agent (si OxiPulse no tiene endpoint, el Agent inyecta `localhost:4317`)
-- Auto-instalación de agentes (ej: "instala OxiPulse si no está")
+- [x] **Enrutado implementado 2026-08-24** — `management/commands.rs`: `route()` recibe cada
+      `CommandRequest` que llega por el túnel. Si `target_agent` está vacío, es para nexus
+      mismo (por ahora responde "not implemented" — ningún `command_type` propio está
+      implementado todavía). Si tiene valor, se reenvía sin interpretar al intake local de ese
+      agente vía `sb_agent_core::command_intake_client`, y el progreso/resultado que devuelva
+      vuelve al túnel como `CommandProgress`/`CommandResponse`. Ver
+      `D:\infra\docs\design-command-intake.md` para el porqué de este reparto: **nexus enruta,
+      no ejecuta** — la ejecución real (`os_upgrade`, hardening, etc.) vive en el agente que
+      sabe de ese dominio (FerroSentry), no aquí.
+- [ ] Configuración de OxiPulse desde el Agent (si OxiPulse no tiene endpoint, el Agent inyecta `localhost:4317`)
+- [ ] Auto-instalación de agentes (ej: "instala OxiPulse si no está")
+- [ ] `command_type` propios de nexus como acción del servidor (no de ningún agente):
+      encendido/apagado/reinicio suelto (ver reparto en el documento de diseño), tail logs,
+      restart service.
 
 ### Fase 4: Más agentes
 - Definir contrato genérico para que cualquier agente SB se registre en Conduit

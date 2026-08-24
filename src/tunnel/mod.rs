@@ -6,6 +6,7 @@ use tonic::Request;
 use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::config::AgentKind;
+use crate::management::commands;
 use crate::proto::{
     AgentInfo, AgentStatus, ClientHello, Heartbeat, ServerHello, TunnelEnvelope,
     tunnel_envelope::Payload, tunnel_service_client::TunnelServiceClient,
@@ -203,7 +204,40 @@ impl TunnelClient {
                         }
                     }
                 }
+
+                inbound_msg = inbound.message() => {
+                    match inbound_msg {
+                        Ok(Some(envelope)) => self.handle_inbound(envelope, &tx),
+                        Ok(None) => {
+                            tracing::warn!("tunnel inbound stream closed by gateway, reconnecting…");
+                            return Ok(());
+                        }
+                        Err(status) => {
+                            tracing::error!("tunnel inbound stream error: {}", status);
+                            return Err(status.into());
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    /// Despacha un mensaje que llega del gateway. Hoy solo `Command` tiene
+    /// manejo real — el resto de variantes cloud→agente (`DesiredState`,
+    /// futuros mensajes de CromoForge) se registrará aquí según se vayan
+    /// implementando.
+    fn handle_inbound(&self, envelope: TunnelEnvelope, tx: &mpsc::Sender<TunnelEnvelope>) {
+        match envelope.payload {
+            Some(Payload::Command(cmd)) => {
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    commands::route(cmd, tx).await;
+                });
+            }
+            Some(other) => {
+                tracing::debug!(payload = ?other, "tunnel inbound: no handler for this payload yet");
+            }
+            None => {}
         }
     }
 }
