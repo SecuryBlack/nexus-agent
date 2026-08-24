@@ -24,23 +24,86 @@ pub async fn route(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>) {
     }
 }
 
-/// Comandos dirigidos al propio nexus (sin `target_agent`). Todavía no hay
-/// ningún `command_type` implementado aquí — los candidatos previstos son
-/// encendido/apagado/reinicio del servidor como acción suelta (ver el
-/// documento de diseño, tabla de reparto FerroSentry/nexus) y gestión de
-/// agentes locales (`management::patch_agent_configs` ya cubre el caso de
-/// autoconfiguración, pero no está expuesto todavía como `command_type`).
+/// Comandos dirigidos al propio nexus (sin `target_agent`). Los candidatos
+/// previstos son encendido/apagado/reinicio del servidor como acción suelta
+/// (ver el documento de diseño, tabla de reparto FerroSentry/nexus) y
+/// gestión de agentes locales (`management::patch_agent_configs` ya cubre el
+/// caso de autoconfiguración, pero no está expuesto todavía como
+/// `command_type`). `update_now` es el primero en implementarse — mismo
+/// comando que ya tienen ferro-sentry/oxi-pulse, para el botón "Actualizar"
+/// de la app.
 async fn route_to_nexus(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>) {
-    tracing::warn!(command_type = %cmd.command_type, "command targeted at nexus itself: not implemented yet");
-    let response = CommandResponse {
-        command_id: cmd.command_id,
-        success: false,
-        stdout: String::new(),
-        stderr: format!("nexus-agent: command_type '{}' not implemented", cmd.command_type),
-        exit_code: 1,
-        duration_ms: 0,
+    let response = if cmd.command_type == "update_now" {
+        handle_update_now(&cmd.command_id).await
+    } else {
+        tracing::warn!(command_type = %cmd.command_type, "command targeted at nexus itself: not implemented yet");
+        CommandResponse {
+            command_id: cmd.command_id,
+            success: false,
+            stdout: String::new(),
+            stderr: format!("nexus-agent: command_type '{}' not implemented", cmd.command_type),
+            exit_code: 1,
+            duration_ms: 0,
+        }
     };
     send_envelope(&tx, Payload::CommandResp(response)).await;
+}
+
+/// Dispara `sb_agent_core::updater::check_now` de inmediato en vez de
+/// esperar al chequeo diario. A diferencia de ferro-sentry/oxi-pulse, nexus
+/// no tiene un intake local separado — este comando llega ya autenticado
+/// por el propio túnel (la conexión que se está usando para mandarlo), así
+/// que no hace falta reenviarlo a ningún sitio.
+///
+/// Si hay actualización, `self_update` ya dejó el binario nuevo en disco;
+/// salir deja que el gestor de servicios lo relance. El exit se retrasa un
+/// momento para que esta misma respuesta salga por el túnel antes de que el
+/// reinicio corte la conexión — el propio túnel es el canal por el que
+/// viaja la respuesta, así que cortarlo antes de tiempo se la comería.
+async fn handle_update_now(command_id: &str) -> CommandResponse {
+    let cfg = sb_agent_core::updater::UpdaterConfig::new("securyblack", "nexus-agent", "nexus-agent", env!("CARGO_PKG_VERSION"));
+    let result = tokio::task::spawn_blocking(move || sb_agent_core::updater::check_now(&cfg)).await;
+
+    match result {
+        Ok(Ok(true)) => {
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                std::process::exit(0);
+            });
+            CommandResponse {
+                command_id: command_id.to_string(),
+                success: true,
+                stdout: serde_json::json!({ "updated": true, "previous_version": env!("CARGO_PKG_VERSION") }).to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+                duration_ms: 0,
+            }
+        }
+        Ok(Ok(false)) => CommandResponse {
+            command_id: command_id.to_string(),
+            success: true,
+            stdout: serde_json::json!({ "updated": false, "current_version": env!("CARGO_PKG_VERSION") }).to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms: 0,
+        },
+        Ok(Err(e)) => CommandResponse {
+            command_id: command_id.to_string(),
+            success: false,
+            stdout: String::new(),
+            stderr: format!("update check failed: {e}"),
+            exit_code: 1,
+            duration_ms: 0,
+        },
+        Err(e) => CommandResponse {
+            command_id: command_id.to_string(),
+            success: false,
+            stdout: String::new(),
+            stderr: format!("update task panicked: {e}"),
+            exit_code: 1,
+            duration_ms: 0,
+        },
+    }
 }
 
 /// Comandos dirigidos a un agente local concreto (FerroSentry, CromoForge,
