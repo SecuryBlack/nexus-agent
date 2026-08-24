@@ -48,8 +48,29 @@ async fn route_to_nexus(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>) {
 /// `command_type` ni `payload` — es responsabilidad del agente destino
 /// rechazarlos si no los reconoce (ver `sb_agent_core::command_intake`).
 async fn route_to_local_agent(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>) {
-    let target_agent = cmd.target_agent.clone();
     let command_id = cmd.command_id.clone();
+
+    // `target_agent` en el envelope es el nombre "de producto" (p.ej.
+    // "ferrosentry", sin guion — el mismo que usa `AgentKind::as_str()` y
+    // `agent.toml`), pero el socket/pipe local que expone cada agente usa el
+    // nombre de su binario (p.ej. "ferro-sentry", con guion). Sin este
+    // mapeo, `send_command` busca un socket que no existe nunca — ver
+    // `registry::socket_agent_name`, que ya resuelve esto mismo para el
+    // status socket.
+    let Ok(kind) = cmd.target_agent.parse::<crate::config::AgentKind>() else {
+        tracing::warn!(command_id = %command_id, target_agent = %cmd.target_agent, "command targeted at unknown agent kind");
+        let response = CommandResponse {
+            command_id,
+            success: false,
+            stdout: String::new(),
+            stderr: format!("unknown target_agent: {}", cmd.target_agent),
+            exit_code: 1,
+            duration_ms: 0,
+        };
+        send_envelope(&tx, Payload::CommandResp(response)).await;
+        return;
+    };
+    let target_agent = crate::registry::socket_agent_name(&kind).to_string();
 
     let payload = if cmd.payload.trim().is_empty() {
         serde_json::Value::Null

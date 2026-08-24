@@ -45,7 +45,7 @@ pub struct LocalAgent {
 /// `AgentKind::as_str()` (FerroSentry expone su socket como "ferro-sentry",
 /// con guion, mientras que `as_str()` devuelve "ferrosentry" por compatibilidad
 /// con `enabled_agents` en `agent.toml`).
-fn socket_agent_name(kind: &AgentKind) -> &'static str {
+pub fn socket_agent_name(kind: &AgentKind) -> &'static str {
     match kind {
         AgentKind::OxiPulse => "oxipulse",
         AgentKind::FerroSentry => "ferro-sentry",
