@@ -77,6 +77,9 @@ async fn route_to_local_agent(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelo
         command_type: cmd.command_type.clone(),
         payload,
         timeout_secs: cmd.timeout_secs.max(0) as u32,
+        // `send_command` lo sobrescribe con el token compartido de la
+        // máquina antes de mandarlo — ver `sb_agent_core::intake_auth`.
+        auth_token: String::new(),
     };
 
     // El cliente del intake es síncrono y bloqueante (mismo estilo que
