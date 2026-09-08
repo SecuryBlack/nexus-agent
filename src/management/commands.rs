@@ -8,7 +8,9 @@
 //! Ver `D:\infra\docs\design-command-intake.md` para el porqué de este
 //! reparto de responsabilidades entre agentes.
 
-use crate::proto::{tunnel_envelope::Payload, CommandProgress, CommandRequest, CommandResponse, TunnelEnvelope};
+use crate::proto::{
+    CommandProgress, CommandRequest, CommandResponse, TunnelEnvelope, tunnel_envelope::Payload,
+};
 use sb_agent_core::command_intake::CommandEnvelope as IntakeEnvelope;
 use tokio::sync::mpsc;
 
@@ -41,7 +43,10 @@ async fn route_to_nexus(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>) {
             command_id: cmd.command_id,
             success: false,
             stdout: String::new(),
-            stderr: format!("nexus-agent: command_type '{}' not implemented", cmd.command_type),
+            stderr: format!(
+                "nexus-agent: command_type '{}' not implemented",
+                cmd.command_type
+            ),
             exit_code: 1,
             duration_ms: 0,
         }
@@ -61,7 +66,12 @@ async fn route_to_nexus(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>) {
 /// reinicio corte la conexión — el propio túnel es el canal por el que
 /// viaja la respuesta, así que cortarlo antes de tiempo se la comería.
 async fn handle_update_now(command_id: &str) -> CommandResponse {
-    let cfg = sb_agent_core::updater::UpdaterConfig::new("securyblack", "nexus-agent", "nexus-agent", env!("CARGO_PKG_VERSION"));
+    let cfg = sb_agent_core::updater::UpdaterConfig::new(
+        "securyblack",
+        "nexus-agent",
+        "nexus-agent",
+        env!("CARGO_PKG_VERSION"),
+    );
     let result = tokio::task::spawn_blocking(move || sb_agent_core::updater::check_now(&cfg)).await;
 
     match result {
@@ -181,7 +191,9 @@ async fn route_to_local_agent(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelo
             };
             // `blocking_send`: estamos en el hilo bloqueante del intake
             // cliente, no en contexto async.
-            let _ = progress_tx.blocking_send(TunnelEnvelope { payload: Some(Payload::CommandProgress(progress)) });
+            let _ = progress_tx.blocking_send(TunnelEnvelope {
+                payload: Some(Payload::CommandProgress(progress)),
+            });
         })
     })
     .await;
@@ -217,7 +229,13 @@ async fn route_to_local_agent(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelo
 }
 
 async fn send_envelope(tx: &mpsc::Sender<TunnelEnvelope>, payload: Payload) {
-    if tx.send(TunnelEnvelope { payload: Some(payload) }).await.is_err() {
+    if tx
+        .send(TunnelEnvelope {
+            payload: Some(payload),
+        })
+        .await
+        .is_err()
+    {
         tracing::warn!("tunnel send channel closed while replying to a command");
     }
 }

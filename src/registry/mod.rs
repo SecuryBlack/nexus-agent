@@ -78,9 +78,27 @@ pub fn detect(kind: AgentKind) -> LocalAgent {
     // Consider both Run and Sleep as "running" since Sleep is normal for
     // agents waiting on timers/IO.
     let process_name = match kind {
-        AgentKind::OxiPulse => if cfg!(windows) { "oxipulse.exe" } else { "oxipulse" },
-        AgentKind::FerroSentry => if cfg!(windows) { "ferro-sentry.exe" } else { "ferro-sentry" },
-        AgentKind::CupraFlow => if cfg!(windows) { "cupraflow.exe" } else { "cupraflow" },
+        AgentKind::OxiPulse => {
+            if cfg!(windows) {
+                "oxipulse.exe"
+            } else {
+                "oxipulse"
+            }
+        }
+        AgentKind::FerroSentry => {
+            if cfg!(windows) {
+                "ferro-sentry.exe"
+            } else {
+                "ferro-sentry"
+            }
+        }
+        AgentKind::CupraFlow => {
+            if cfg!(windows) {
+                "cupraflow.exe"
+            } else {
+                "cupraflow"
+            }
+        }
     };
     let mut found_running = false;
     for process in system.processes_by_name(std::ffi::OsStr::new(process_name)) {
