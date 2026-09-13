@@ -12,6 +12,7 @@ pub fn patch_agent_configs(enabled_agents: &[AgentKind]) {
             AgentKind::OxiPulse => patch_oxipulse(),
             AgentKind::FerroSentry => patch_ferrosentry(),
             AgentKind::CupraFlow => patch_cupraflow(),
+            AgentKind::CromoForge => {}
         }
     }
 }

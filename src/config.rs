@@ -8,6 +8,7 @@ pub enum AgentKind {
     OxiPulse,
     FerroSentry,
     CupraFlow,
+    CromoForge,
 }
 
 impl AgentKind {
@@ -16,6 +17,7 @@ impl AgentKind {
             AgentKind::OxiPulse => "oxipulse",
             AgentKind::FerroSentry => "ferrosentry",
             AgentKind::CupraFlow => "cupraflow",
+            AgentKind::CromoForge => "cromoforge",
         }
     }
 
@@ -25,6 +27,7 @@ impl AgentKind {
             AgentKind::OxiPulse => "oxipulse".to_string(),
             AgentKind::FerroSentry => "ferro-sentry".to_string(),
             AgentKind::CupraFlow => "cupraflow".to_string(),
+            AgentKind::CromoForge => "cromoforge".to_string(),
         };
         if cfg!(windows) {
             format!("{}.exe", base)
@@ -48,6 +51,9 @@ impl AgentKind {
                     AgentKind::CupraFlow => {
                         paths.push(PathBuf::from(&pd).join("CupraFlow").join("config.toml"));
                     }
+                    AgentKind::CromoForge => {
+                        paths.push(PathBuf::from(&pd).join("CromoForge").join("config.toml"));
+                    }
                 }
             }
         } else {
@@ -60,6 +66,9 @@ impl AgentKind {
                 }
                 AgentKind::CupraFlow => {
                     paths.push(PathBuf::from("/etc/cupraflow/config.toml"));
+                }
+                AgentKind::CromoForge => {
+                    paths.push(PathBuf::from("/etc/cromoforge/config.toml"));
                 }
             }
         }
@@ -81,6 +90,7 @@ impl std::str::FromStr for AgentKind {
             "oxipulse" => Ok(AgentKind::OxiPulse),
             "ferrosentry" => Ok(AgentKind::FerroSentry),
             "cupraflow" => Ok(AgentKind::CupraFlow),
+            "cromoforge" => Ok(AgentKind::CromoForge),
             _ => Err(format!("unknown agent kind: {}", s)),
         }
     }
