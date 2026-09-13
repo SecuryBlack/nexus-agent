@@ -45,7 +45,7 @@ impl TunnelClient {
 
         let mut backoff_secs = 1u64;
         loop {
-            match self.connect_and_stream(&mut bridge_rx).await {
+            match self.connect_and_stream(&mut bridge_rx, bridge_tx.clone()).await {
                 Ok(()) => {
                     tracing::info!("tunnel closed gracefully, reconnecting…");
                     backoff_secs = 1;
@@ -62,15 +62,21 @@ impl TunnelClient {
     async fn connect_and_stream(
         &self,
         bridge_rx: &mut mpsc::Receiver<TunnelEnvelope>,
+        bridge_tx: mpsc::Sender<TunnelEnvelope>,
     ) -> anyhow::Result<()> {
         let endpoint = self.endpoint.clone();
-        let channel = if endpoint.starts_with("https://") {
-            Channel::from_shared(endpoint)?
+        let endpoint_builder = Channel::from_shared(endpoint)?
+            .http2_keep_alive_interval(Duration::from_secs(15))
+            .keep_alive_timeout(Duration::from_secs(10))
+            .keep_alive_while_idle(true);
+
+        let channel = if self.endpoint.starts_with("https://") {
+            endpoint_builder
                 .tls_config(ClientTlsConfig::new().with_native_roots())?
                 .connect()
                 .await?
         } else {
-            Channel::from_shared(endpoint)?.connect().await?
+            endpoint_builder.connect().await?
         };
 
         let mut client = TunnelServiceClient::new(channel);
@@ -207,7 +213,7 @@ impl TunnelClient {
 
                 inbound_msg = inbound.message() => {
                     match inbound_msg {
-                        Ok(Some(envelope)) => self.handle_inbound(envelope, &tx),
+                        Ok(Some(envelope)) => self.handle_inbound(envelope, bridge_tx.clone()),
                         Ok(None) => {
                             tracing::warn!("tunnel inbound stream closed by gateway, reconnecting…");
                             return Ok(());
@@ -226,10 +232,14 @@ impl TunnelClient {
     /// manejo real — el resto de variantes cloud→agente (`DesiredState`,
     /// futuros mensajes de CromoForge) se registrará aquí según se vayan
     /// implementando.
-    fn handle_inbound(&self, envelope: TunnelEnvelope, tx: &mpsc::Sender<TunnelEnvelope>) {
+    ///
+    /// Se le pasa `bridge_tx` (el canal persistente hacia el túnel, no el `tx`
+    /// temporal del stream actual) para que, si el túnel reconecta mientras el
+    /// comando se está ejecutando (p.ej. durante una actualización), la
+    /// respuesta final no se pierda al caerse el stream anterior.
+    fn handle_inbound(&self, envelope: TunnelEnvelope, tx: mpsc::Sender<TunnelEnvelope>) {
         match envelope.payload {
             Some(Payload::Command(cmd)) => {
-                let tx = tx.clone();
                 tokio::spawn(async move {
                     commands::route(cmd, tx).await;
                 });
