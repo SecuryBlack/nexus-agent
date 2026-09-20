@@ -9,6 +9,7 @@ pub enum AgentKind {
     FerroSentry,
     CupraFlow,
     CromoForge,
+    TitanVault,
 }
 
 impl AgentKind {
@@ -18,6 +19,7 @@ impl AgentKind {
             AgentKind::FerroSentry => "ferrosentry",
             AgentKind::CupraFlow => "cupraflow",
             AgentKind::CromoForge => "cromoforge",
+            AgentKind::TitanVault => "titanvault",
         }
     }
 
@@ -28,6 +30,7 @@ impl AgentKind {
             AgentKind::FerroSentry => "ferro-sentry".to_string(),
             AgentKind::CupraFlow => "cupraflow".to_string(),
             AgentKind::CromoForge => "cromoforge".to_string(),
+            AgentKind::TitanVault => "titanvault".to_string(),
         };
         if cfg!(windows) {
             format!("{}.exe", base)
@@ -54,6 +57,9 @@ impl AgentKind {
                     AgentKind::CromoForge => {
                         paths.push(PathBuf::from(&pd).join("CromoForge").join("config.toml"));
                     }
+                    AgentKind::TitanVault => {
+                        paths.push(PathBuf::from(&pd).join("titanvault").join("config.toml"));
+                    }
                 }
             }
         } else {
@@ -69,6 +75,9 @@ impl AgentKind {
                 }
                 AgentKind::CromoForge => {
                     paths.push(PathBuf::from("/etc/cromoforge/config.toml"));
+                }
+                AgentKind::TitanVault => {
+                    paths.push(PathBuf::from("/etc/titanvault/config.toml"));
                 }
             }
         }
@@ -91,6 +100,7 @@ impl std::str::FromStr for AgentKind {
             "ferrosentry" => Ok(AgentKind::FerroSentry),
             "cupraflow" => Ok(AgentKind::CupraFlow),
             "cromoforge" => Ok(AgentKind::CromoForge),
+            "titanvault" | "titan-vault" => Ok(AgentKind::TitanVault),
             _ => Err(format!("unknown agent kind: {}", s)),
         }
     }

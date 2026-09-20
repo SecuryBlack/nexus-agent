@@ -51,6 +51,7 @@ pub fn socket_agent_name(kind: &AgentKind) -> &'static str {
         AgentKind::FerroSentry => "ferro-sentry",
         AgentKind::CupraFlow => "cupraflow",
         AgentKind::CromoForge => "cromoforge",
+        AgentKind::TitanVault => "titanvault",
     }
 }
 
@@ -105,6 +106,13 @@ pub fn detect(kind: AgentKind) -> LocalAgent {
                 "cromoforge.exe"
             } else {
                 "cromoforge"
+            }
+        }
+        AgentKind::TitanVault => {
+            if cfg!(windows) {
+                "titanvault.exe"
+            } else {
+                "titanvault"
             }
         }
     };
