@@ -1,85 +1,80 @@
 # SecuryBlack Agent (nexus-agent)
 
-Agente SecuryBlack para servidores cliente. Proporciona un túnel persistente y seguro, orquesta agentes locales (OxiPulse, FerroSentry) y gestiona despliegues CI/CD desde repos de GitHub.
+Host agent for client servers. Provides a secure, persistent outbound tunnel, orchestrates local agents (OxiPulse, FerroSentry, CupraFlow, CromoForge, TitanVault), and routes remote commands and deployments.
 
-> **Estado:** En desarrollo activo. Túnel persistente, proxy OTLP local, registry de agentes y sincronización de configuración (Fases 0-2 de este roadmap) ya están implementados en `src/`. **Fase 3 (enrutado de comandos) implementada 2026-08-24** — ver más abajo, es enrutado, no ejecución: nexus reenvía `CommandRequest` al intake local del agente destino (`FerroSentry`, `CromoForge`, ...) sin interpretarlo; solo ejecuta directamente lo dirigido a sí mismo, y ahí mismo sigue sin haber ningún `command_type` implementado todavía. El contrato genérico multi-agente (Fase 4) sigue pendiente. El resto de este documento describe la arquitectura y el plan de fases.
-
----
-
-## 🏷️ Nombre
-
-- **Nombre del producto:** SecuryBlack Agent
-- **Binario:** `nexus-agent`
-- **Servicio systemd:** `securyblack-agent` (Linux) / `SecuryBlackAgent` (Windows)
-
-"Agente" es el punto de presencia de SecuryBlack en la infraestructura del cliente: túnel seguro, proxy OTLP local, orquestación de agentes y motor de despliegue CI/CD.
+> **Status:** Active development. Persistent tunnel, local OTLP proxy, agent discovery registry, and config synchronization (Phases 0–2 of this roadmap) are fully implemented in `src/`. **Phase 3 (Command Routing) implemented 2026-08-24** — nexus routes `CommandRequest` payloads directly to the local command intake socket of the target agent (`FerroSentry`, `CromoForge`, ...) without interpreting domain logic, returning streaming progress back to the cloud tunnel.
 
 ---
 
-## 🏗️ Arquitectura General
+## 🏷️ Identity & Naming
 
-### Responsabilidades
+- **Product Name:** SecuryBlack Agent
+- **Binary:** `nexus-agent`
+- **System Service:** `securyblack-agent` (Linux systemd) / `SecuryBlackAgent` (Windows Service)
 
-1. **Túnel persistente** con SecuryBlack Cloud — conexión outbound (HTTPS/443), auto-reconnect, heartbeat.
-2. **Proxy OTLP local** — expone `localhost:4317` (gRPC) donde OxiPulse y futuros agentes envían métricas.
-3. **Bridge** — recibe OTLP localmente y lo reenvía al ingestor de SB a través del túnel.
-4. **Orquestación de agentes locales** — descubre qué agentes están corriendo, health checks, config sync.
-5. **Auto-configuración** — al instalar OxiPulse en modo "a través del agente", no hace falta preguntar endpoint; Conduit inyecta la configuración.
+The agent serves as SecuryBlack's point of presence on client infrastructure: secure gRPC tunnel, local OTLP proxy, agent lifecycle orchestration, and command dispatch.
 
-### Diagrama de flujo
+---
+
+## 🏗️ General Architecture
+
+### Core Responsibilities
+
+1. **Persistent Tunnel:** Outbound TLS/443 gRPC stream to SecuryBlack Cloud with automated reconnect and heartbeats.
+2. **Local OTLP Proxy:** Exposes `localhost:4317` (gRPC) where OxiPulse and other local telemetry sources send metrics.
+3. **Telemetry Bridge:** Ingests local OTLP frames and ships them through the multiplexed tunnel to cloud ingestors.
+4. **Local Agent Orchestration:** Discovers running SecuryBlack agents via sockets, runs periodic health checks, and synchronizes configuration.
+5. **Auto-Configuration:** Injects local collector endpoints into co-located agents without requiring manual configuration.
+
+### Data Flow Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         SECURYBLACK CLOUD                                    │
+│                            SECURYBLACK CLOUD                                │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────────────┐   │
-│  │  Dashboard   │    │  Tunnel      │    │  Ingestor OTLP (Go)          │   │
-│  │  / API       │◄───┤  Server      │◄───┤  (recibe metrics de Conduit) │   │
+│  │  Dashboard   │    │  Tunnel      │    │  OTLP Ingestion Engine (Go)  │   │
+│  │  / Web API   │◄───┤  Server      │◄───┤  (Receives piped metrics)    │   │
 │  └──────────────┘    │  (WebSocket/ │    └──────────────────────────────┘   │
 │                      │   gRPC)      │                                       │
 │                      └──────┬───────┘                                       │
 └─────────────────────────────┼───────────────────────────────────────────────┘
-                              │
-                    ╔═════════╧═════════╗
-                    ║   TÚNEL TLS       ║   ← outbound 443, auto-reconnect
-                    ║   (bidireccional) ║
-                    ╚═════════╤═════════╝
-                              │
+                               │
+                     ╔═════════╧═════════╗
+                     ║   TLS TUNNEL      ║   ← Outbound 443, auto-reconnect
+                     ║ (Bidirectional)   ║
+                     ╚═════════╤═════════╝
+                               │
 ┌─────────────────────────────┼───────────────────────────────────────────────┐
-│     SERVIDOR DEL CLIENTE    │                                               │
+│     CLIENT SERVER           │                                               │
 │                             │                                               │
 │  ┌──────────────────────────┴─────────────────────────┐                      │
-│  │  SecuryBlack Agent (nexus-agent) — Servicio Rust      │                      │
+│  │  SecuryBlack Agent (nexus-agent) — Rust Service    │                      │
 │  │  ┌────────────────┐  ┌──────────────────────────┐  │                      │
-│  │  │ Tunnel Client  │  │ Local OTLP gRPC Server   │  │◄── OxiPulse local  │
-│  │  │ (WebSocket/gRPC│  │ (localhost:4317)         │  │    (modo local)    │
-│  │  │  bidirectional)│  └──────────────────────────┘  │                      │
+│  │  │ Tunnel Client  │  │ Local OTLP gRPC Server   │  │◄── Local OxiPulse    │
+│  │  │ (gRPC Stream / │  │ (localhost:4317)         │  │    (local mode)      │
+│  │  │  Multiplexed)  │  └──────────────────────────┘  │                      │
 │  │  └────────────────┘  ┌──────────────────────────┐  │                      │
 │  │  ┌────────────────┐  │ Agent Registry & Health  │  │                      │
-│  │  │ Config Sync    │  │ (descubre agentes SB)    │  │                      │
-│  │  │ (remoto ↔ local)│ └──────────────────────────┘  │                      │
+│  │  │ Config Sync    │  │ (Discovers SB Agents)    │  │                      │
+│  │  │ (Cloud ↔ Host) │  └──────────────────────────┘  │                      │
 │  │  └────────────────┘                                │                      │
 │  └────────────────────────────────────────────────────┘                      │
 │           ▲                                                                  │
-│           │ OTLP gRPC directo (modo legacy)                                  │
+│           │ Direct OTLP gRPC (legacy direct mode)                            │
 │    ┌──────┴──────┐                                                           │
-│    │  OxiPulse   │  ← modo "direct" (sin cambios, como ahora)                │
-│    │  (modo      │                                                           │
-│    │   directo)  │                                                           │
+│    │  OxiPulse   │  ← Direct cloud mode                                      │
+│    │  (direct)   │                                                           │
 │    └─────────────┘                                                           │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🔌 Protocolo de Túnel
+## 🔌 Tunnel Protocol
 
-**Protocolo principal:** gRPC bidireccional streaming.
+**Primary Protocol:** Bidirectional streaming gRPC with native multiplexing, binary Protobuf serialization, and keepalive heartbeats.
 
-Por coherencia con el stack actual (ya se usa `tonic` en Rust y gRPC en Go), gRPC bidireccional es eficiente, multiplexa mensajes y permite heartbeat nativo.
-
-**Fallback futuro:** WebSocket sobre TLS para firewalls corporativos restrictivos, sin tocar la arquitectura.
-
-### Definición protobuf propuesta
+### Protocol Definition
 
 ```protobuf
 syntax = "proto3";
@@ -119,171 +114,58 @@ message AgentInfo {
 
 ---
 
-## 🔧 Cambios en OxiPulse (mínimos)
-
-### 1. Config (`config/mod.rs`)
-
-Añadir campo `mode`:
-
-```toml
-# config.toml — modo directo (actual, default)
-endpoint = "https://ingest.securyblack.com:4317"
-token = "sb_xxx"
-mode = "direct"
-
-# config.toml — modo local agent
-mode = "local_agent"
-# endpoint se ignora o se setea automáticamente a localhost:4317
-token = "sb_xxx"
-```
-
-```rust
-pub enum Mode {
-    #[serde(rename = "direct")]
-    Direct,
-    #[serde(rename = "local_agent")]
-    LocalAgent,
-}
-```
-
-- Si `mode = Direct` → `endpoint` es required (como ahora).
-- Si `mode = LocalAgent` → `endpoint` es opcional, default a `http://localhost:4317`.
-
-### 2. Telemetry (`telemetry/mod.rs`)
-
-Sin cambios significativos. El `endpoint` que recibe `init()` vendrá seteado a `localhost:4317` cuando `mode = LocalAgent`. El token sigue enviándose en metadata OTLP; Conduit lo recibe y lo reenvía al ingestor cloud.
-
-### 3. Scripts de instalación
-
-Los scripts `install.sh` e `install.ps1` instalan el agente como servicio de sistema:
-
-```bash
-curl -fsSL https://install.securyblack.dev/nexus-agent | bash -s -- --token <TOKEN>
-```
-
-Flujo interactivo:
-El instalador genera `/etc/securyblack/agent.toml` con el token y arranca el servicio `securyblack-agent`.
-
----
-
-## 📁 Estructura del Proyecto Conduit (Rust)
+## 📁 Project Structure
 
 ```
 nexus-agent/
 ├── Cargo.toml
 ├── proto/
-│   └── tunnel/v1/tunnel.proto ← Definición del Conduit Protocol
+│   └── tunnel/v1/tunnel.proto
 ├── src/
-│   ├── main.rs                # Entry point, Windows service wrapper, init logging
-│   ├── config.rs              # TOML + env vars, similar a OxiPulse
+│   ├── main.rs                # Entry point, service wrappers, logging
+│   ├── config.rs              # TOML + environment variables
 │   ├── tunnel/
-│   │   ├── mod.rs             # Trait TunnelClient + loop de reconnect
-│   │   ├── grpc.rs            # Implementación con tonic (bidirectional stream)
-│   │   ├── heartbeat.rs       # Keepalive cada X segundos
-│   │   └── auth.rs            # TLS + token auth
+│   │   ├── mod.rs             # TunnelClient trait + reconnect loop
+│   │   ├── grpc.rs            # Bidirectional streaming client (tonic)
+│   │   ├── heartbeat.rs       # Periodic keepalive pulses
+│   │   └── auth.rs            # TLS + token authentication
 │   ├── proxy/
-│   │   ├── mod.rs             # Trait LocalProxy
-│   │   └── otlp.rs            # gRPC server OTLP local (tonic)
+│   │   ├── mod.rs             # LocalProxy trait
+│   │   └── otlp.rs            # Local OTLP gRPC server (tonic)
 │   ├── bridge/
-│   │   └── mod.rs             # Conecta proxy::otlp ↔ tunnel::grpc
+│   │   └── mod.rs             # Bridges proxy::otlp ↔ tunnel::grpc
 │   ├── registry/
-│   │   ├── mod.rs             # Descubrimiento de agentes locales
-│   │   └── health.rs          # Health checks de agentes SB conocidos
+│   │   ├── mod.rs             # Local agent discovery
+│   │   └── health.rs          # Health check probe loop
 │   ├── management/
-│   │   ├── mod.rs             # Comandos remotos, config sync
-│   │   └── commands.rs        # Ejecución de comandos en el host
+│   │   ├── mod.rs             # Command routing & config sync
+│   │   └── commands.rs        # Host command dispatcher
 │   └── updater/
-│       └── mod.rs             # Auto-update desde GitHub Releases (self_update)
+│       └── mod.rs             # Self-updater from GitHub Releases
 ├── scripts/
-│   ├── install.sh             # Linux/macOS: instala binario + systemd service
-│   └── install.ps1            # Windows: instala binario + Windows Service
+│   ├── install.sh             # Linux installer & systemd service
+│   └── install.ps1            # Windows PowerShell installer
 └── .github/
     └── workflows/
-        └── release.yml        # Cross-compile + release
+        └── release.yml
 ```
 
-### Stack tecnológico propuesto
-
-| Función | Crate |
-|---------|-------|
-| Async runtime | `tokio` (full) |
-| Logging | `tracing` + `tracing-subscriber` + `tracing-appender` |
-| gRPC / OTLP proxy local | `tonic` |
-| Tunnel gRPC | `tonic` (cliente bidirectional streaming) |
-| TLS | `rustls` + `tokio-rustls` |
-| Serialización config | `serde` + `toml` |
-| Serialización protobuf | `prost` (via tonic-build) |
-| Docker client (deploys) | `bollard` |
-| Auto-update | `self_update` (mismo crate que OxiPulse) |
-| Windows service | `windows-service` |
-| Sysinfo para inventario | `sysinfo` |
-
 ---
 
-## 📋 Plan de Desarrollo por Fases
+## 📦 Quickstart & Installation
 
-### Fase 0: Infraestructura compartida
-- Setup de CI/CD (release cross-platform)
-- Definir `proto/tunnel/v1/tunnel.proto` (Conduit Protocol) y publicar como artefacto compartido
-- **Paralelamente:** modificar OxiPulse para soportar `mode = local_agent` (cambios mínimos descritos arriba)
+### Linux
+```bash
+curl -fsSL https://install.securyblack.dev/nexus-agent | sudo bash -s -- --token <TOKEN>
+```
 
-### Fase 1: Túnel + Proxy OTLP (MVP)
-- Implementar `tunnel::grpc` (cliente bidireccional, reconnect, heartbeat)
-- Implementar `proxy::otlp` (servidor gRPC local en `localhost:4317`)
-- Implementar `bridge` (recibe OTLP del proxy, empaqueta en `TunnelMessage`, envía por túnel)
-- Implementar lado servidor del túnel en Go (dentro de `securyblack-edge-gateway`)
-
-### Fase 2: Orquestación
-- `registry`: detectar si OxiPulse está corriendo localmente (chequear proceso, puerto 4317, socket Unix)
-- Health checks periódicos de agentes locales
-- `AgentStatus` en el túnel (informar a la nube qué agentes hay activos)
-- Sincronización de config remota → local (ej: la nube dice "actualiza OxiPulse")
-
-### Fase 3: Comandos y Gestión
-- [x] **Enrutado implementado 2026-08-24** — `management/commands.rs`: `route()` recibe cada
-      `CommandRequest` que llega por el túnel. Si `target_agent` está vacío, es para nexus
-      mismo (por ahora responde "not implemented" — ningún `command_type` propio está
-      implementado todavía). Si tiene valor, se reenvía sin interpretar al intake local de ese
-      agente vía `sb_agent_core::command_intake_client`, y el progreso/resultado que devuelva
-      vuelve al túnel como `CommandProgress`/`CommandResponse`. Ver
-      `D:\infra\docs\design-command-intake.md` para el porqué de este reparto: **nexus enruta,
-      no ejecuta** — la ejecución real (`os_upgrade`, hardening, etc.) vive en el agente que
-      sabe de ese dominio (FerroSentry), no aquí.
-- [ ] Configuración de OxiPulse desde el Agent (si OxiPulse no tiene endpoint, el Agent inyecta `localhost:4317`)
-- [ ] Auto-instalación de agentes (ej: "instala OxiPulse si no está")
-- [ ] `command_type` propios de nexus como acción del servidor (no de ningún agente):
-      encendido/apagado/reinicio suelto (ver reparto en el documento de diseño), tail logs,
-      restart service.
-
-### Fase 4: Más agentes
-- Definir contrato genérico para que cualquier agente SB se registre en Conduit
-- Integrar FerroSentry como agente adicional que use el túnel
-
----
-
-## ❓ Decisiones pendientes
-
-1. **✅ Resuelto:** El Tunnel Server vive en `securyblack-edge-gateway` (Go), junto al ingestor OTLP.
-2. **✅ Resuelto:** Reutiliza el token de la tabla `agents` (mismo que usa OxiPulse).
-3. **¿Empezamos por el MVP (Fase 1) directamente?** Es decir: túnel + proxy OTLP local + modificación mínima de OxiPulse, sin orquestación ni comandos todavía.
-
----
-
-## 📚 Contexto: Arquitectura de OxiPulse (referencia)
-
-OxiPulse es el agente de monitorización en Rust que Conduit debe integrar.
-
-- **Repo:** `oxi-pulse/`
-- **Protocolo de salida:** OTLP sobre gRPC (tonic/opentelemetry-otlp)
-- **Config:** TOML en `/etc/oxipulse/config.toml` (Linux) o `C:\ProgramData\oxipulse\config.toml` (Windows)
-- **Variables de entorno:** `OXIPULSE_ENDPOINT`, `OXIPULSE_TOKEN`, `OXIPULSE_INTERVAL_SECS`, etc.
-- **Auto-update:** `self_update` crate desde GitHub Releases
-- **Windows service:** `windows-service` crate
-- **Offline buffer:** ring buffer con backoff exponencial cuando no hay conectividad TCP
+### Windows (PowerShell Administrator)
+```powershell
+irm https://install.securyblack.dev/nexus-agent/windows | iex
+```
 
 ---
 
 ## License
 
 Nexus Agent is licensed under the [Apache License, Version 2.0](LICENSE).
-
