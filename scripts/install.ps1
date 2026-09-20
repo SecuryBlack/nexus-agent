@@ -82,6 +82,8 @@ if ([string]::IsNullOrWhiteSpace($Token)) {
 $installOxiPulse    = $false
 $installFerroSentry = $false
 $installCupraFlow   = $false
+$installCromoForge  = $false
+$installTitanVault  = $false
 
 if ([string]::IsNullOrWhiteSpace($Agents)) {
     if ($Yes -or -not $canPrompt) {
@@ -92,6 +94,8 @@ if ([string]::IsNullOrWhiteSpace($Agents)) {
         $installOxiPulse    = Ask-YesNo "¿Instalar OxiPulse?"
         $installFerroSentry = Ask-YesNo "¿Instalar FerroSentry?"
         $installCupraFlow   = Ask-YesNo "¿Instalar CupraFlow?"
+        $installCromoForge  = Ask-YesNo "¿Instalar CromoForge?"
+        $installTitanVault  = Ask-YesNo "¿Instalar TitanVault?"
     }
 }
 
@@ -101,6 +105,8 @@ if (-not [string]::IsNullOrWhiteSpace($Agents)) {
             "oxipulse"    { $installOxiPulse = $true }
             "ferrosentry" { $installFerroSentry = $true }
             "cupraflow"   { $installCupraFlow = $true }
+            "cromoforge"  { $installCromoForge = $true }
+            "titanvault"  { $installTitanVault = $true }
             "none"        { }
             ""            { }
             default       { Invoke-SbFail "Agente desconocido: $a" }
@@ -112,6 +118,8 @@ $enabledAgents = @()
 if ($installOxiPulse)    { $enabledAgents += "oxipulse" }
 if ($installFerroSentry) { $enabledAgents += "ferrosentry" }
 if ($installCupraFlow)   { $enabledAgents += "cupraflow" }
+if ($installCromoForge)  { $enabledAgents += "cromoforge" }
+if ($installTitanVault)  { $enabledAgents += "titanvault" }
 
 if ($enabledAgents.Count -eq 0) {
     Write-SbWarn "No se seleccionó ningún agente local. El nexus-agent operará únicamente como túnel."
@@ -175,6 +183,33 @@ try {
             Write-SbSuccess "CupraFlow instalado."
         } catch {
             Write-SbWarn "No se pudo instalar CupraFlow automáticamente. Instálalo manualmente."
+            Write-SbWarn $_.Exception.Message
+        }
+    }
+
+    if ($installCromoForge) {
+        Write-Host "`n=== Instalando CromoForge ===" -ForegroundColor Cyan
+        try {
+            $crUrl = "https://raw.githubusercontent.com/securyblack/cromo-forge/main/scripts/install.ps1"
+            $crScript = Invoke-RestMethod -Uri $crUrl -UseBasicParsing
+            Invoke-Expression $crScript
+            Write-SbSuccess "CromoForge instalado."
+        } catch {
+            Write-SbWarn "No se pudo instalar CromoForge automáticamente. Instálalo manualmente."
+            Write-SbWarn $_.Exception.Message
+        }
+    }
+
+    if ($installTitanVault) {
+        Write-Host "`n=== Instalando TitanVault ===" -ForegroundColor Cyan
+        try {
+            $tvUrl = "https://install.titanvault.dev"
+            $tvScript = Invoke-RestMethod -Uri $tvUrl -UseBasicParsing
+            $sb = [scriptblock]::Create($tvScript)
+            & $sb
+            Write-SbSuccess "TitanVault instalado."
+        } catch {
+            Write-SbWarn "No se pudo instalar TitanVault automáticamente. Instálalo manualmente."
             Write-SbWarn $_.Exception.Message
         }
     }

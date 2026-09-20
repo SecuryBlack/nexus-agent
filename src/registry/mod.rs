@@ -160,9 +160,28 @@ pub fn detect(kind: AgentKind) -> LocalAgent {
     }
 }
 
-/// Detecta todos los agentes habilitados.
+/// Detecta agentes locales: todos los explícitamente habilitados, más
+/// cualquier agente conocido que esté instalado o en ejecución en el host.
 pub fn detect_all(enabled: &[AgentKind]) -> Vec<LocalAgent> {
-    enabled.iter().map(|k| detect(*k)).collect()
+    let mut result = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for &k in enabled {
+        seen.insert(k);
+        result.push(detect(k));
+    }
+
+    for &k in AgentKind::ALL {
+        if seen.contains(&k) {
+            continue;
+        }
+        let agent = detect(k);
+        if agent.status != AgentStatus::NotInstalled {
+            result.push(agent);
+        }
+    }
+
+    result
 }
 
 /// Busca un ejecutable en el PATH del sistema.

@@ -13,6 +13,14 @@ pub enum AgentKind {
 }
 
 impl AgentKind {
+    pub const ALL: &'static [AgentKind] = &[
+        AgentKind::OxiPulse,
+        AgentKind::FerroSentry,
+        AgentKind::CupraFlow,
+        AgentKind::CromoForge,
+        AgentKind::TitanVault,
+    ];
+
     pub fn as_str(&self) -> &'static str {
         match self {
             AgentKind::OxiPulse => "oxipulse",

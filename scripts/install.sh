@@ -62,7 +62,7 @@ Uso:
 Opciones:
   --token <TOKEN>      Token del servidor (lo genera el panel al crearlo).
                        Si se omite, se pide de forma interactiva.
-  --agents <lista>     Agentes locales separados por comas: oxipulse,ferrosentry,cupraflow
+  --agents <lista>     Agentes locales separados por comas: oxipulse,ferrosentry,cupraflow,cromoforge,titanvault
                        Usa "none" para instalar solo el túnel.
                        Por defecto en modo desatendido: ${DEFAULT_AGENTS}
   --endpoint <URL>     Endpoint de ingesta (por defecto: ${ENDPOINT})
@@ -107,6 +107,8 @@ fi
 INSTALL_OXIPULSE=false
 INSTALL_FERROSENTRY=false
 INSTALL_CUPRAFLOW=false
+INSTALL_CROMOFORGE=false
+INSTALL_TITANVAULT=false
 
 # Sin --agents: se pregunta si hay terminal, y si no (o con --yes) se usan los
 # valores por defecto. Así `curl | sudo bash -s -- --token X` no se queda colgado.
@@ -119,6 +121,8 @@ if [[ -z "$AGENTS_ARG" ]]; then
         ask_yes_no "¿Instalar OxiPulse?"    && INSTALL_OXIPULSE=true
         ask_yes_no "¿Instalar FerroSentry?" && INSTALL_FERROSENTRY=true
         ask_yes_no "¿Instalar CupraFlow?"   && INSTALL_CUPRAFLOW=true
+        ask_yes_no "¿Instalar CromoForge?"  && INSTALL_CROMOFORGE=true
+        ask_yes_no "¿Instalar TitanVault?"  && INSTALL_TITANVAULT=true
     fi
 fi
 
@@ -129,6 +133,8 @@ if [[ -n "$AGENTS_ARG" ]]; then
             oxipulse)    INSTALL_OXIPULSE=true ;;
             ferrosentry) INSTALL_FERROSENTRY=true ;;
             cupraflow)   INSTALL_CUPRAFLOW=true ;;
+            cromoforge)  INSTALL_CROMOFORGE=true ;;
+            titanvault)  INSTALL_TITANVAULT=true ;;
             none|"")     ;;
             *)           sb_die "Agente desconocido: ${_a}" ;;
         esac
@@ -139,6 +145,8 @@ ENABLED_AGENTS=()
 $INSTALL_OXIPULSE    && ENABLED_AGENTS+=("oxipulse")
 $INSTALL_FERROSENTRY && ENABLED_AGENTS+=("ferrosentry")
 $INSTALL_CUPRAFLOW   && ENABLED_AGENTS+=("cupraflow")
+$INSTALL_CROMOFORGE  && ENABLED_AGENTS+=("cromoforge")
+$INSTALL_TITANVAULT  && ENABLED_AGENTS+=("titanvault")
 
 if [[ ${#ENABLED_AGENTS[@]} -eq 0 ]]; then
     sb_warn "No se seleccionó ningún agente local. El nexus-agent operará únicamente como túnel."
@@ -210,6 +218,38 @@ fi
 if $INSTALL_CUPRAFLOW; then
     sb_warn "CupraFlow no publica todavía build para Linux (su release.yml solo compila Windows)."
     sb_warn "Sáltalo por ahora o instálalo manualmente cuando exista un target Linux."
+fi
+
+if $INSTALL_CROMOFORGE; then
+    sb_info "Instalando CromoForge"
+    if command -v cromoforge &>/dev/null || [[ -f /etc/cromoforge/config.toml ]]; then
+        sb_warn "CromoForge parece estar ya instalado. Saltando."
+    else
+        CF_URL="https://raw.githubusercontent.com/securyblack/cromo-forge/main/scripts/install.sh"
+        if curl -fsSL "$CF_URL" &>/dev/null; then
+            sb_info "Invocando instalador oficial de CromoForge ..."
+            bash -c "$(curl -fsSL $CF_URL)"
+            sb_success "CromoForge instalado."
+        else
+            sb_warn "No se pudo contactar el instalador de CromoForge. Instálalo manualmente."
+        fi
+    fi
+fi
+
+if $INSTALL_TITANVAULT; then
+    sb_info "Instalando TitanVault"
+    if command -v titanvault &>/dev/null || [[ -f /etc/titanvault/config.toml ]]; then
+        sb_warn "TitanVault parece estar ya instalado. Saltando."
+    else
+        TV_URL="https://install.titanvault.dev"
+        if curl -fsSL "$TV_URL" &>/dev/null; then
+            sb_info "Invocando instalador oficial de TitanVault ..."
+            bash -c "$(curl -fsSL $TV_URL)"
+            sb_success "TitanVault instalado."
+        else
+            sb_warn "No se pudo contactar el instalador de TitanVault. Instálalo manualmente."
+        fi
+    fi
 fi
 
 # ─── Configurar nexus-agent ─────────────────────────────────────────────────
