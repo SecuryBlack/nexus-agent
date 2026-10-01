@@ -2,6 +2,14 @@
 
 Host agent for client servers. Provides a secure, persistent outbound tunnel, orchestrates local agents (OxiPulse, FerroSentry, CupraFlow, CromoForge, TitanVault), and routes remote commands and deployments.
 
+## Use with SecuryBlack
+
+SecuryBlack is a hosted panel for server metrics, security findings and alerts. This repository contains the native agent; the hosted panel is a separate part of the product.
+
+[Watch the 42-second product demo](https://securyblack.com/en?utm_source=github&utm_medium=referral&utm_campaign=agent_readme&utm_content=nexus-agent#how-it-works) · [Open the hosted panel](https://app.securyblack.com) · [Installation documentation](https://securyblack.com/en/docs/installation)
+
+Follow the agent-specific installation and configuration instructions below. Use the hosted panel to obtain connection settings for your server.
+
 > **Status:** Active development. Persistent tunnel, local OTLP proxy, agent discovery registry, and config synchronization (Phases 0–2 of this roadmap) are fully implemented in `src/`. **Phase 3 (Command Routing) implemented 2026-08-24** — nexus routes `CommandRequest` payloads directly to the local command intake socket of the target agent (`FerroSentry`, `CromoForge`, ...) without interpreting domain logic, returning streaming progress back to the cloud tunnel.
 
 ---
@@ -10,7 +18,7 @@ Host agent for client servers. Provides a secure, persistent outbound tunnel, or
 
 - **Product Name:** SecuryBlack Agent
 - **Binary:** `nexus-agent`
-- **System Service:** `securyblack-agent` (Linux systemd) / `SecuryBlackAgent` (Windows Service)
+- **System Service:** `securyblack-agent` (Linux systemd) / `NexusAgent` (Windows Service)
 
 The agent serves as SecuryBlack's point of presence on client infrastructure: secure gRPC tunnel, local OTLP proxy, agent lifecycle orchestration, and command dispatch.
 
@@ -169,3 +177,7 @@ irm https://install.securyblack.dev/nexus-agent/windows | iex
 ## License
 
 Nexus Agent is licensed under the [Apache License, Version 2.0](LICENSE).
+
+## Maintainer context (workspace)
+
+English is the primary language for this repository's public documentation. Shared product decisions, commercial terms and the backlog live in the [workspace wiki](../sb-wiki/Índice.md), [current state](../sb-wiki/Producto/Estado%20actual.md) and [product log](../sb-wiki/Producto/Bitácora.md). These links require `sb-wiki` as a sibling checkout. Keep agent-specific usage and technical contracts here; update shared decisions in the wiki.
