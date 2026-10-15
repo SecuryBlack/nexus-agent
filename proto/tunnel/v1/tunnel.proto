@@ -191,6 +191,8 @@ message CommandRequest {
   // sb-agent-core/src/command_intake.rs y
   // D:\infra\docs\design-command-intake.md para el porqué de este reparto.
   string target_agent = 5;
+  string signature    = 7;  // Firma ed25519 (base64) hecha por la API (S4). Vacía = sin firmar.
+  int64  expires_at   = 8;  // Caducidad en segundos Unix. 0 = sin caducidad.
 }
 
 message CommandResponse {

@@ -18,9 +18,12 @@ use tokio::sync::mpsc;
 /// principal del túnel: se llama desde una tarea `tokio::spawn` propia por
 /// comando, así que un comando lento no retrasa heartbeats ni otros
 /// comandos concurrentes.
-pub async fn route(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>) {
+/// `server_token` (el del config) solo se usa para verificar la firma S4 de
+/// las órdenes que ejecuta el propio nexus; las de agentes locales las
+/// verifica el intake de cada agente.
+pub async fn route(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>, server_token: String) {
     if cmd.target_agent.is_empty() {
-        route_to_nexus(cmd, tx).await;
+        route_to_nexus(cmd, tx, server_token).await;
     } else {
         route_to_local_agent(cmd, tx).await;
     }
@@ -34,8 +37,37 @@ pub async fn route(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>) {
 /// `command_type`). `update_now` es el primero en implementarse — mismo
 /// comando que ya tienen ferro-sentry/oxi-pulse, para el botón "Actualizar"
 /// de la app.
-async fn route_to_nexus(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelope>) {
-    let response = if cmd.command_type == "update_now" {
+async fn route_to_nexus(
+    cmd: CommandRequest,
+    tx: mpsc::Sender<TunnelEnvelope>,
+    server_token: String,
+) {
+    // Payload que no es JSON válido: se verifica como `null`, así que una
+    // orden firmada con ese payload no pasa la firma.
+    let envelope = IntakeEnvelope {
+        command_id: cmd.command_id.clone(),
+        command_type: cmd.command_type.clone(),
+        payload: serde_json::from_str(&cmd.payload).unwrap_or(serde_json::Value::Null),
+        signature: signature_of(&cmd),
+        expires_at: expires_at_of(&cmd),
+        ..Default::default()
+    };
+    let ctx = sb_agent_core::command_signing::SigningContext {
+        server_token,
+        target_agent: String::new(),
+    };
+    let now = sb_agent_core::command_signing::unix_now();
+    let response = if let Err(e) = sb_agent_core::command_signing::enforce(&envelope, &ctx, now) {
+        tracing::warn!(command_id = %cmd.command_id, reason = %e, "rejecting command for nexus");
+        CommandResponse {
+            command_id: cmd.command_id,
+            success: false,
+            stdout: String::new(),
+            stderr: format!("nexus-agent: command rejected: {e}"),
+            exit_code: 1,
+            duration_ms: 0,
+        }
+    } else if cmd.command_type == "update_now" {
         handle_update_now(&cmd.command_id).await
     } else {
         tracing::warn!(command_type = %cmd.command_type, "command targeted at nexus itself: not implemented yet");
@@ -174,6 +206,8 @@ async fn route_to_local_agent(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelo
         // `send_command` lo sobrescribe con el token compartido de la
         // máquina antes de mandarlo — ver `sb_agent_core::intake_auth`.
         auth_token: String::new(),
+        signature: signature_of(&cmd),
+        expires_at: expires_at_of(&cmd),
     };
 
     // El cliente del intake es síncrono y bloqueante (mismo estilo que
@@ -228,6 +262,15 @@ async fn route_to_local_agent(cmd: CommandRequest, tx: mpsc::Sender<TunnelEnvelo
     send_envelope(&tx, Payload::CommandResp(response)).await;
 }
 
+/// Proto3 no distingue "ausente": `""` y `0` significan sin firma / sin caducidad.
+fn signature_of(cmd: &CommandRequest) -> Option<String> {
+    Some(cmd.signature.clone()).filter(|s| !s.is_empty())
+}
+
+fn expires_at_of(cmd: &CommandRequest) -> Option<i64> {
+    Some(cmd.expires_at).filter(|&e| e != 0)
+}
+
 async fn send_envelope(tx: &mpsc::Sender<TunnelEnvelope>, payload: Payload) {
     if tx
         .send(TunnelEnvelope {
@@ -237,5 +280,27 @@ async fn send_envelope(tx: &mpsc::Sender<TunnelEnvelope>, payload: Payload) {
         .is_err()
     {
         tracing::warn!("tunnel send channel closed while replying to a command");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn nexus_rejects_expired_command() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let cmd = CommandRequest {
+            command_id: "c1".into(),
+            command_type: "update_now".into(),
+            expires_at: 1,
+            ..Default::default()
+        };
+        route(cmd, tx, "tok".into()).await;
+        let Some(Payload::CommandResp(resp)) = rx.recv().await.and_then(|e| e.payload) else {
+            panic!("expected a CommandResponse");
+        };
+        assert!(!resp.success);
+        assert!(resp.stderr.contains("expired"), "{}", resp.stderr);
     }
 }

@@ -240,8 +240,9 @@ impl TunnelClient {
     fn handle_inbound(&self, envelope: TunnelEnvelope, tx: mpsc::Sender<TunnelEnvelope>) {
         match envelope.payload {
             Some(Payload::Command(cmd)) => {
+                let token = self.token.clone();
                 tokio::spawn(async move {
-                    commands::route(cmd, tx).await;
+                    commands::route(cmd, tx, token).await;
                 });
             }
             Some(other) => {

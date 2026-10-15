@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Commands**: Forward S4 command signatures (`signature`, `expires_at` in `CommandRequest`) to local agents, and verify them for commands nexus runs itself (`update_now`). Unsigned commands are still accepted with a warning during the transition.
+
 ## [0.2.16] - 2026-10-14
 
 ### Security
