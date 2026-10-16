@@ -287,12 +287,14 @@ async fn send_envelope(tx: &mpsc::Sender<TunnelEnvelope>, payload: Payload) {
 mod tests {
     use super::*;
 
+    /// Transición (REQUIRE_SIGNED_COMMANDS = false): una orden caducada pasa
+    /// con aviso. Tipo desconocido para no lanzar nada de verdad.
     #[tokio::test]
-    async fn nexus_rejects_expired_command() {
+    async fn nexus_accepts_expired_command_during_transition() {
         let (tx, mut rx) = mpsc::channel(4);
         let cmd = CommandRequest {
             command_id: "c1".into(),
-            command_type: "update_now".into(),
+            command_type: "no_such_command".into(),
             expires_at: 1,
             ..Default::default()
         };
@@ -300,7 +302,6 @@ mod tests {
         let Some(Payload::CommandResp(resp)) = rx.recv().await.and_then(|e| e.payload) else {
             panic!("expected a CommandResponse");
         };
-        assert!(!resp.success);
-        assert!(resp.stderr.contains("expired"), "{}", resp.stderr);
+        assert!(resp.stderr.contains("not implemented"), "{}", resp.stderr);
     }
 }

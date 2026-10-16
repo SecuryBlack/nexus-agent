@@ -5,10 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.17] - 2026-10-16
 
 ### Security
-- **Commands**: Forward S4 command signatures (`signature`, `expires_at` in `CommandRequest`) to local agents, and verify them for commands nexus runs itself (`update_now`). Unsigned commands are still accepted with a warning during the transition.
+- **Commands**: Forward S4 command signatures (`signature`, `expires_at` in `CommandRequest`) to local agents, and verify them for commands nexus runs itself (`update_now`). During the transition any verification failure (unsigned, invalid or expired) is accepted with a warning.
 
 ## [0.2.16] - 2026-10-14
 
