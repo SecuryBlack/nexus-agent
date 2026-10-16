@@ -7,3 +7,8 @@ Cargo.lock
 *~
 .idea/
 .vscode/
+
+# Local only
+.env
+*.err
+PHASE2.md
