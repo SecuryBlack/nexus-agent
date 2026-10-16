@@ -20,7 +20,7 @@ Nexus Agent is SecuryBlack's point of presence on your server, so you should kno
 The install script needs root to:
 
 - place the binary at `/usr/local/bin/nexus-agent`;
-- write `/etc/securyblack/agent.toml`, which holds your SecuryBlack server token in plain text, readable only by root (the installer sets `/etc/securyblack` to 700 and the file to 600; installs before 0.2.18 should run `chmod 700 /etc/securyblack && chmod 600 /etc/securyblack/agent.toml`);
+- write `/etc/securyblack/agent.toml`, which holds your SecuryBlack server token in plain text, readable only by root (the installer sets `/etc/securyblack` to 700 and the file to 600; installs made before 2026-10-16 should run `chmod 700 /etc/securyblack && chmod 600 /etc/securyblack/agent.toml`);
 - register and start the systemd unit `securyblack-agent`;
 - optionally run the official installers of the local agents you select (OxiPulse, FerroSentry, CromoForge, TitanVault), passing them the same token.
 
