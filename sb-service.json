@@ -1,6 +1,6 @@
 {
   "name": "Nexus Agent",
-  "description": "Agente en Rust para orquestación, túneles y CI/CD",
+  "description": "Agente base en Rust: túnel gRPC/TLS a SB Cloud, proxy OTLP local y orquestación de los agentes locales",
   "type": "rust",
   "role": "agent",
   "start": "cargo run"

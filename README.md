@@ -1,6 +1,9 @@
 # SecuryBlack Agent (nexus-agent)
 
-Host agent for client servers. Provides a secure, persistent outbound tunnel, orchestrates local agents (OxiPulse, FerroSentry, CupraFlow, CromoForge, TitanVault), and routes remote commands and deployments.
+Host agent for client servers, installed from the SecuryBlack panel. It keeps a persistent outbound gRPC/TLS tunnel to SecuryBlack Cloud, runs a local OTLP proxy for the other agents, discovers the SecuryBlack agents on the host and relays remote commands to them.
+
+> **Part of the SecuryBlack ecosystem:**
+> [OxiPulse (Metrics)](https://github.com/securyblack/oxi-pulse) · [FerroSentry (Security)](https://github.com/securyblack/ferro-sentry) · [CupraFlow (Networking/HA development)](https://github.com/securyblack/cupra-flow) · [CromoForge (Docker/PostgreSQL)](https://github.com/securyblack/cromo-forge) · [TitanVault (Backups)](https://github.com/securyblack/titan-vault) · **Nexus Agent (Tunnel)** · [SecuryBlack Cloud](https://securyblack.com)
 
 ## Use with SecuryBlack
 
@@ -10,17 +13,16 @@ SecuryBlack is a hosted panel for server metrics, security findings and alerts. 
 
 Follow the agent-specific installation and configuration instructions below. Use the hosted panel to obtain connection settings for your server.
 
-> **Status:** Active development. Persistent tunnel, local OTLP proxy, agent discovery registry, and config synchronization (Phases 0–2 of this roadmap) are fully implemented in `src/`. **Phase 3 (Command Routing) implemented 2026-08-24** — nexus routes `CommandRequest` payloads directly to the local command intake socket of the target agent (`FerroSentry`, `CromoForge`, ...) without interpreting domain logic, returning streaming progress back to the cloud tunnel.
+> **Status:** Active development. Implemented in `src/`: the persistent tunnel with handshake, heartbeats and reconnect; the local gRPC proxy on `127.0.0.1:4317` (OTLP metrics and FerroSentry security events); local agent discovery and status reporting; auto-configuration of OxiPulse into `local_agent` mode; command routing to local agents' command intake; the `update_now` command; and the signed self-updater. Remote commands are ed25519-signed by the API; in 0.2.x unsigned commands are still accepted with a warning (see [SECURITY.md](.github/SECURITY.md)). CromoForge deployments (`DesiredState`) are defined in the protocol but not handled yet.
 
 ---
 
 ## 🏷️ Identity & Naming
 
-- **Product Name:** SecuryBlack Agent
+- **Product Name:** SecuryBlack Agent (Nexus Agent)
 - **Binary:** `nexus-agent`
 - **System Service:** `securyblack-agent` (Linux systemd) / `NexusAgent` (Windows Service)
-
-The agent serves as SecuryBlack's point of presence on client infrastructure: secure gRPC tunnel, local OTLP proxy, agent lifecycle orchestration, and command dispatch.
+- **Config:** `/etc/securyblack/agent.toml` (Linux) / `C:\ProgramData\SecuryBlack\agent.toml` (Windows)
 
 ---
 
@@ -28,11 +30,12 @@ The agent serves as SecuryBlack's point of presence on client infrastructure: se
 
 ### Core Responsibilities
 
-1. **Persistent Tunnel:** Outbound TLS/443 gRPC stream to SecuryBlack Cloud with automated reconnect and heartbeats.
-2. **Local OTLP Proxy:** Exposes `localhost:4317` (gRPC) where OxiPulse and other local telemetry sources send metrics.
-3. **Telemetry Bridge:** Ingests local OTLP frames and ships them through the multiplexed tunnel to cloud ingestors.
-4. **Local Agent Orchestration:** Discovers running SecuryBlack agents via sockets, runs periodic health checks, and synchronizes configuration.
-5. **Auto-Configuration:** Injects local collector endpoints into co-located agents without requiring manual configuration.
+1. **Persistent Tunnel:** Outbound gRPC over TLS (443) to SecuryBlack Cloud, with a heartbeat every 30 s, agent status every 60 s and exponential-backoff reconnect.
+2. **Local Proxy:** Listens on `127.0.0.1:4317` for OTLP metrics (OxiPulse) and security events (FerroSentry) and ships them through the tunnel.
+3. **Agent Discovery:** Reads each agent's status socket, falling back to process, config and `PATH` checks, and reports name, version and state to the cloud.
+4. **Auto-Configuration:** Switches a co-located OxiPulse to `local_agent` mode pointing at the local proxy and restarts it.
+5. **Command Routing:** Forwards `CommandRequest`s to the target agent's local command intake and streams progress and results back. Commands for Nexus itself: `update_now`.
+6. **Self-Update:** Daily check of GitHub Releases; installs only ed25519-signed releases.
 
 ### Data Flow Diagram
 
@@ -42,8 +45,8 @@ The agent serves as SecuryBlack's point of presence on client infrastructure: se
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────────────┐   │
 │  │  Dashboard   │    │  Tunnel      │    │  OTLP Ingestion Engine (Go)  │   │
 │  │  / Web API   │◄───┤  Server      │◄───┤  (Receives piped metrics)    │   │
-│  └──────────────┘    │  (WebSocket/ │    └──────────────────────────────┘   │
-│                      │   gRPC)      │                                       │
+│  └──────────────┘    │  (gRPC)      │    └──────────────────────────────┘   │
+│                      │              │                                       │
 │                      └──────┬───────┘                                       │
 └─────────────────────────────┼───────────────────────────────────────────────┘
                                │
@@ -76,49 +79,12 @@ The agent serves as SecuryBlack's point of presence on client infrastructure: se
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
 ---
 
 ## 🔌 Tunnel Protocol
 
-**Primary Protocol:** Bidirectional streaming gRPC with native multiplexing, binary Protobuf serialization, and keepalive heartbeats.
-
-### Protocol Definition
-
-```protobuf
-syntax = "proto3";
-
-package securyblack.tunnel.v1;
-
-service Tunnel {
-  rpc Connect(stream TunnelMessage) returns (stream TunnelMessage);
-}
-
-message TunnelMessage {
-  oneof payload {
-    ClientHello       hello        = 1;
-    ServerHello       server_hello = 2;
-    OtelMetricsBatch  metrics      = 3;
-    Heartbeat         heartbeat    = 4;
-    ConfigUpdate      config       = 5;
-    CommandRequest    command      = 6;
-    CommandResponse   command_resp = 7;
-    AgentStatus       agent_status = 8;
-  }
-}
-
-message ClientHello {
-  string server_id   = 1;
-  string token       = 2;
-  string version     = 3;
-  repeated AgentInfo agents = 4;
-}
-
-message AgentInfo {
-  string name     = 1;
-  string version  = 2;
-  string status   = 3;
-}
-```
+A single bidirectional gRPC stream, `TunnelService.Stream(stream TunnelEnvelope) returns (stream TunnelEnvelope)`, carries every message as a `oneof` payload: `ClientHello`/`ServerHello` handshake (the server token travels in `ClientHello`), `Heartbeat`, raw OTLP metrics, security events, `AgentStatus`, `CommandRequest`/`CommandProgress`/`CommandResponse`, and the CromoForge deployment messages. The full definition is in [`proto/tunnel/v1/tunnel.proto`](proto/tunnel/v1/tunnel.proto).
 
 ---
 
@@ -126,58 +92,48 @@ message AgentInfo {
 
 ```
 nexus-agent/
-├── Cargo.toml
-├── proto/
-│   └── tunnel/v1/tunnel.proto
+├── proto/tunnel/v1/tunnel.proto   # Tunnel and local SecurityService protocol
+├── build.rs                       # Compiles the proto (vendored protoc)
 ├── src/
-│   ├── main.rs                # Entry point, service wrappers, logging
-│   ├── config.rs              # TOML + environment variables
-│   ├── tunnel/
-│   │   ├── mod.rs             # TunnelClient trait + reconnect loop
-│   │   ├── grpc.rs            # Bidirectional streaming client (tonic)
-│   │   ├── heartbeat.rs       # Periodic keepalive pulses
-│   │   └── auth.rs            # TLS + token authentication
-│   ├── proxy/
-│   │   ├── mod.rs             # LocalProxy trait
-│   │   └── otlp.rs            # Local OTLP gRPC server (tonic)
-│   ├── bridge/
-│   │   └── mod.rs             # Bridges proxy::otlp ↔ tunnel::grpc
-│   ├── registry/
-│   │   ├── mod.rs             # Local agent discovery
-│   │   └── health.rs          # Health check probe loop
-│   ├── management/
-│   │   ├── mod.rs             # Command routing & config sync
-│   │   └── commands.rs        # Host command dispatcher
-│   └── updater/
-│       └── mod.rs             # Self-updater from GitHub Releases
-├── scripts/
-│   ├── install.sh             # Linux installer & systemd service
-│   └── install.ps1            # Windows PowerShell installer
-└── .github/
-    └── workflows/
-        └── release.yml
+│   ├── main.rs                    # Entry point, service wrapper, updater start
+│   ├── config.rs                  # agent.toml and the known local agents
+│   ├── tunnel/mod.rs              # gRPC tunnel client, handshake, reconnect
+│   ├── proxy/mod.rs               # Local OTLP + security event proxy (:4317)
+│   ├── registry/mod.rs            # Local agent discovery
+│   └── management/
+│       ├── mod.rs                 # OxiPulse auto-configuration
+│       └── commands.rs            # Command routing and update_now
+└── scripts/
+    ├── install.sh                 # Linux installer and systemd service
+    └── install.ps1                # Windows installer and service
 ```
+
+Shared pieces (service wrapper, logging, updater, status sockets, command intake and signing) come from [`sb-agent-core`](https://github.com/securyblack/sb-agent-core).
 
 ---
 
-## 📦 Quickstart & Installation
+## 📦 Installation
+
+Create the server in the [SecuryBlack panel](https://app.securyblack.com); it shows these commands with your token filled in.
 
 ### Linux
 ```bash
-curl -fsSL https://install.securyblack.dev/nexus-agent | sudo bash -s -- --token <TOKEN>
+curl -fsSL https://install.securyblack.com/linux | sudo bash -s -- --token <TOKEN>
 ```
 
-### Windows (PowerShell Administrator)
+### Windows (PowerShell as Administrator)
 ```powershell
-irm https://install.securyblack.dev/nexus-agent/windows | iex
+& ([scriptblock]::Create((irm https://install.securyblack.com/windows))) -Token "<TOKEN>"
 ```
+
+Add `--agents oxipulse,ferrosentry` (`-Agents` on Windows) to choose which local agents to install, or `none` for the tunnel only.
 
 ---
+
+## Security
+
+What the agent sends where, the privileges it needs and how to report a vulnerability: [SECURITY.md](.github/SECURITY.md).
 
 ## License
 
 Nexus Agent is licensed under the [Apache License, Version 2.0](LICENSE).
-
-## Maintainer context (workspace)
-
-English is the primary language for this repository's public documentation. Shared product decisions, commercial terms and the backlog live in the [workspace wiki](../sb-wiki/Índice.md), [current state](../sb-wiki/Producto/Estado%20actual.md) and [product log](../sb-wiki/Producto/Bitácora.md). These links require `sb-wiki` as a sibling checkout. Keep agent-specific usage and technical contracts here; update shared decisions in the wiki.
