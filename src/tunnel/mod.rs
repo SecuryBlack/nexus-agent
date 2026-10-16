@@ -45,7 +45,10 @@ impl TunnelClient {
 
         let mut backoff_secs = 1u64;
         loop {
-            match self.connect_and_stream(&mut bridge_rx, bridge_tx.clone()).await {
+            match self
+                .connect_and_stream(&mut bridge_rx, bridge_tx.clone())
+                .await
+            {
                 Ok(()) => {
                     tracing::info!("tunnel closed gracefully, reconnecting…");
                     backoff_secs = 1;
