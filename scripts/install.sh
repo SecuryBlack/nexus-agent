@@ -162,6 +162,7 @@ LATEST_VERSION="$(sb_fetch_latest_version "$GITHUB_REPO")"
 
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR"
 
 if systemctl is-active --quiet securyblack-agent 2>/dev/null; then
     sb_info "Deteniendo servicio securyblack-agent previo..."
@@ -268,6 +269,8 @@ token = "${TOKEN}"
 endpoint = "${ENDPOINT}"
 enabled_agents = [${TOML_AGENTS}]
 EOF
+# Holds the server token; the service runs as root.
+chmod 600 "${CONFIG_DIR}/agent.toml"
 
 sb_success "Configuración escrita en ${CONFIG_DIR}/agent.toml"
 
