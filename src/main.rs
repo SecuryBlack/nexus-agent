@@ -1,3 +1,4 @@
+#[allow(clippy::result_large_err)] // generated tonic code returns tonic::Status
 pub mod proto {
     tonic::include_proto!("securyblack.tunnel.v1");
 }
