@@ -1,4 +1,5 @@
-#[allow(clippy::result_large_err)] // generated tonic code returns tonic::Status
+// Generated tonic code: returns tonic::Status and repeats #[must_use] via async_trait.
+#[allow(clippy::result_large_err, clippy::double_must_use)]
 pub mod proto {
     tonic::include_proto!("securyblack.tunnel.v1");
 }
