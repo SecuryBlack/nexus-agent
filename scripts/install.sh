@@ -226,10 +226,10 @@ if $INSTALL_CROMOFORGE; then
     if command -v cromoforge &>/dev/null || [[ -f /etc/cromoforge/config.toml ]]; then
         sb_warn "CromoForge parece estar ya instalado. Saltando."
     else
-        CF_URL="https://raw.githubusercontent.com/securyblack/cromo-forge/main/scripts/install.sh"
+        CF_URL="https://install.cromoforge.dev"
         if curl -fsSL "$CF_URL" &>/dev/null; then
             sb_info "Invocando instalador oficial de CromoForge ..."
-            bash -c "$(curl -fsSL $CF_URL)"
+            bash -c "$(curl -fsSL $CF_URL)" -- --token "$TOKEN"
             sb_success "CromoForge instalado."
         else
             sb_warn "No se pudo contactar el instalador de CromoForge. Instálalo manualmente."
