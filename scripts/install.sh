@@ -198,8 +198,11 @@ if $INSTALL_OXIPULSE; then
         OXI_URL="https://install.oxipulse.dev"
         if curl -fsSL "$OXI_URL" &>/dev/null; then
             sb_info "Invocando instalador oficial de OxiPulse ..."
-            bash -c "$(curl -fsSL $OXI_URL)" -- --mode local_agent --token "$TOKEN"
-            sb_success "OxiPulse instalado."
+            if bash -c "$(curl -fsSL $OXI_URL)" -- --mode local_agent --token "$TOKEN"; then
+                sb_success "OxiPulse instalado."
+            else
+                sb_warn "Falló el instalador de OxiPulse. Instálalo manualmente; el resto sigue."
+            fi
         else
             sb_warn "No se pudo contactar el instalador de OxiPulse. Instálalo manualmente."
         fi
@@ -214,8 +217,11 @@ if $INSTALL_FERROSENTRY; then
         FS_URL="https://install.ferrosentry.dev"
         if curl -fsSL "$FS_URL" &>/dev/null; then
             sb_info "Invocando instalador oficial de FerroSentry ..."
-            bash -c "$(curl -fsSL $FS_URL)" -- --mode agent --endpoint "http://localhost:4317" --token "$TOKEN"
-            sb_success "FerroSentry instalado."
+            if bash -c "$(curl -fsSL $FS_URL)" -- --mode agent --endpoint "http://localhost:4317" --token "$TOKEN"; then
+                sb_success "FerroSentry instalado."
+            else
+                sb_warn "Falló el instalador de FerroSentry. Instálalo manualmente; el resto sigue."
+            fi
         else
             sb_warn "No se pudo contactar el instalador de FerroSentry. Instálalo manualmente."
         fi
@@ -235,8 +241,11 @@ if $INSTALL_CROMOFORGE; then
         CF_URL="https://install.cromoforge.dev"
         if curl -fsSL "$CF_URL" &>/dev/null; then
             sb_info "Invocando instalador oficial de CromoForge ..."
-            bash -c "$(curl -fsSL $CF_URL)" -- --token "$TOKEN"
-            sb_success "CromoForge instalado."
+            if bash -c "$(curl -fsSL $CF_URL)" -- --token "$TOKEN"; then
+                sb_success "CromoForge instalado."
+            else
+                sb_warn "Falló el instalador de CromoForge. Instálalo manualmente; el resto sigue."
+            fi
         else
             sb_warn "No se pudo contactar el instalador de CromoForge. Instálalo manualmente."
         fi
@@ -251,8 +260,11 @@ if $INSTALL_TITANVAULT; then
         TV_URL="https://install.titanvault.dev"
         if curl -fsSL "$TV_URL" &>/dev/null; then
             sb_info "Invocando instalador oficial de TitanVault ..."
-            bash -c "$(curl -fsSL $TV_URL)"
-            sb_success "TitanVault instalado."
+            if bash -c "$(curl -fsSL $TV_URL)"; then
+                sb_success "TitanVault instalado."
+            else
+                sb_warn "Falló el instalador de TitanVault. Instálalo manualmente; el resto sigue."
+            fi
         else
             sb_warn "No se pudo contactar el instalador de TitanVault. Instálalo manualmente."
         fi
