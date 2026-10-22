@@ -93,7 +93,13 @@ sb_require_cmds curl tar systemctl
 
 sb_info "=== Nexus Agent - Instalador Linux/macOS ==="
 
-# Token
+# Token. Si el servidor ya tiene Nexus se reutiliza el suyo: para añadir un
+# agente basta con volver a ejecutar el comando con --agents, sin regenerarlo
+# (los agentes ya instalados se quedarían con el viejo).
+if [[ -z "${TOKEN:-}" && -f "${CONFIG_DIR}/agent.toml" ]]; then
+    TOKEN="$(sed -n 's/^token *= *"\(.*\)"$/\1/p' "${CONFIG_DIR}/agent.toml" | head -1)"
+    [[ -n "$TOKEN" ]] && sb_info "Reutilizando el token de la instalación actual"
+fi
 if [[ -z "${TOKEN:-}" ]]; then
     if has_tty; then
         read -rp "Introduce tu token de SecuryBlack: " TOKEN </dev/tty
