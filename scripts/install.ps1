@@ -69,6 +69,17 @@ $DefaultAgents = "oxipulse,ferrosentry"
 # fallaría. Si no se puede preguntar, hay que venir con -Token.
 $canPrompt = -not [Console]::IsInputRedirected
 
+# Si el servidor ya tiene Nexus se reutiliza su token, como en install.sh: para
+# añadir un agente basta con volver a ejecutar el comando con -Agents.
+$configPath = Join-Path $DataDir "agent.toml"
+if ([string]::IsNullOrWhiteSpace($Token) -and (Test-Path $configPath)) {
+    $match = Select-String -Path $configPath -Pattern '^token\s*=\s*"(.*)"' | Select-Object -First 1
+    if ($match) {
+        $Token = $match.Matches[0].Groups[1].Value
+        Write-Host "Reutilizando el token de la instalación actual"
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($Token)) {
     if ($canPrompt) {
         $Token = Read-Host "Introduce tu token de SecuryBlack"
@@ -190,9 +201,10 @@ try {
     if ($installCromoForge) {
         Write-Host "`n=== Instalando CromoForge ===" -ForegroundColor Cyan
         try {
-            $crUrl = "https://raw.githubusercontent.com/securyblack/cromo-forge/main/scripts/install.ps1"
+            $crUrl = "https://install.cromoforge.dev/windows"
             $crScript = Invoke-RestMethod -Uri $crUrl -UseBasicParsing
-            Invoke-Expression $crScript
+            $sb = [scriptblock]::Create($crScript)
+            & $sb -Token $Token
             Write-SbSuccess "CromoForge instalado."
         } catch {
             Write-SbWarn "No se pudo instalar CromoForge automáticamente. Instálalo manualmente."
