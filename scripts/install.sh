@@ -93,7 +93,13 @@ sb_require_cmds curl tar systemctl
 
 sb_info "=== Nexus Agent - Instalador Linux/macOS ==="
 
-# Token
+# Token. Si el servidor ya tiene Nexus se reutiliza el suyo: para añadir un
+# agente basta con volver a ejecutar el comando con --agents, sin regenerarlo
+# (los agentes ya instalados se quedarían con el viejo).
+if [[ -z "${TOKEN:-}" && -f "${CONFIG_DIR}/agent.toml" ]]; then
+    TOKEN="$(sed -n 's/^token *= *"\(.*\)"$/\1/p' "${CONFIG_DIR}/agent.toml" | head -1)"
+    [[ -n "$TOKEN" ]] && sb_info "Reutilizando el token de la instalación actual"
+fi
 if [[ -z "${TOKEN:-}" ]]; then
     if has_tty; then
         read -rp "Introduce tu token de SecuryBlack: " TOKEN </dev/tty
@@ -226,10 +232,10 @@ if $INSTALL_CROMOFORGE; then
     if command -v cromoforge &>/dev/null || [[ -f /etc/cromoforge/config.toml ]]; then
         sb_warn "CromoForge parece estar ya instalado. Saltando."
     else
-        CF_URL="https://raw.githubusercontent.com/securyblack/cromo-forge/main/scripts/install.sh"
+        CF_URL="https://install.cromoforge.dev"
         if curl -fsSL "$CF_URL" &>/dev/null; then
             sb_info "Invocando instalador oficial de CromoForge ..."
-            bash -c "$(curl -fsSL $CF_URL)"
+            bash -c "$(curl -fsSL $CF_URL)" -- --token "$TOKEN"
             sb_success "CromoForge instalado."
         else
             sb_warn "No se pudo contactar el instalador de CromoForge. Instálalo manualmente."
