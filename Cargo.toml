@@ -1,6 +1,6 @@
 [package]
 name = "nexus-agent"
-version = "0.2.17"
+version = "0.2.18"
 edition = "2024"
 license = "Apache-2.0"
 description = "SecuryBlack agent — tunnel, orchestrator and CI/CD deployer for client servers"
@@ -38,4 +38,4 @@ strip = true
 # no está publicado en crates.io: el patch lo resuelve desde el tag de GitHub.
 # Quitar cuando se publique esa versión del crate.
 [patch.crates-io]
-sb-agent-core = { git = "https://github.com/SecuryBlack/sb-agent-core.git", tag = "v0.4.0" }
+sb-agent-core = { git = "https://github.com/SecuryBlack/sb-agent-core.git", tag = "v0.4.1" }

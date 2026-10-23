@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.18] - 2026-10-23
+
+### Fixed
+- **Logs**: Old log files are deleted again; only the last 7 days are kept (sb-agent-core 0.4.1). Rotated files (`nexus-agent.log.YYYY-MM-DD`) were never removed: a Windows install had 131 of them.
+
 ## [0.2.17] - 2026-10-16
 
 ### Security
