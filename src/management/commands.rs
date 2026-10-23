@@ -57,6 +57,17 @@ async fn route_to_nexus(
         target_agent: String::new(),
     };
     let now = sb_agent_core::command_signing::unix_now();
+    // Etapa `sig:*` para medir la flota (S4); edge-gateway solo la sella.
+    send_envelope(
+        &tx,
+        Payload::CommandProgress(CommandProgress {
+            command_id: cmd.command_id.clone(),
+            stage: sb_agent_core::command_signing::verification_stage(&envelope, &ctx, now),
+            message: String::new(),
+            percent: -1,
+        }),
+    )
+    .await;
     let response = if let Err(e) = sb_agent_core::command_signing::enforce(&envelope, &ctx, now) {
         tracing::warn!(command_id = %cmd.command_id, reason = %e, "rejecting command for nexus");
         CommandResponse {
@@ -299,6 +310,10 @@ mod tests {
             ..Default::default()
         };
         route(cmd, tx, "tok".into()).await;
+        let Some(Payload::CommandProgress(p)) = rx.recv().await.and_then(|e| e.payload) else {
+            panic!("expected the sig:* stage first");
+        };
+        assert_eq!(p.stage, "sig:expired");
         let Some(Payload::CommandResp(resp)) = rx.recv().await.and_then(|e| e.payload) else {
             panic!("expected a CommandResponse");
         };
