@@ -13,7 +13,16 @@ mod tunnel;
 use std::sync::Arc;
 use tunnel::TunnelClient;
 
+/// rustls entra con ring (reqwest 0.12) y aws-lc-rs (reqwest 0.13 de
+/// self_update), y así no puede deducir el proveedor: tonic 0.12 construye
+/// la config TLS del túnel sin proveedor y el proceso entra en pánico (0.2.20).
+/// Fijamos ring; si ya hay uno instalado, nos vale.
+fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 async fn run_agent(shutdown: tokio::sync::oneshot::Receiver<()>) {
+    install_crypto_provider();
     // Cargar variables desde .env (busca en directorio del ejecutable y actual)
     if let Ok(exe_path) = std::env::current_exe()
         && let Some(exe_dir) = exe_path.parent()
@@ -126,4 +135,18 @@ fn main() {
         env!("CARGO_PKG_VERSION"),
     );
     sb_agent_core::service::run_console(run_agent);
+}
+
+#[cfg(test)]
+mod crypto_provider_tests {
+    use tonic::transport::{Channel, ClientTlsConfig};
+
+    // Sin install_crypto_provider esto entra en pánico, igual que la 0.2.20.
+    #[test]
+    fn tunnel_tls_config_builds() {
+        super::install_crypto_provider();
+        Channel::from_static("https://example.com")
+            .tls_config(ClientTlsConfig::new().with_native_roots())
+            .unwrap();
+    }
 }
