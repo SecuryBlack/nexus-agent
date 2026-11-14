@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.21] - 2026-11-14
+
+### Fixed
+- **Startup crash in 0.2.20**: the agent panicked when opening the tunnel ("Could not automatically determine the process-level CryptoProvider"). rustls now gets both `ring` and `aws-lc-rs` from the dependency tree, and tonic 0.12 builds the tunnel's TLS config without a provider. The agent now installs `ring` as the process default at startup. 0.2.20 was pulled.
+
 ## [0.2.20] - 2026-11-14
 
 ### Security
