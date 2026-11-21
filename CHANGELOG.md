@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.23] - 2026-11-21
+
+### Added
+- **HTTP tunnel for deployed apps**: with `tunnel_apps = true` in `agent.toml`, the tunnel may also reach the local ports where CromoForge publishes the apps deployed from the panel (20000-29999), so an app on a machine without a public IP can be served on its own domain without listing a port per deployment. Off by default.
+
 ## [0.2.22] - 2026-11-21
 
 ### Added
