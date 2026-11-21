@@ -131,6 +131,13 @@ pub struct AgentConfig {
     /// Agentes locales que el usuario eligió habilitar.
     #[serde(default)]
     pub enabled_agents: Vec<AgentKind>,
+
+    /// Puertos locales (127.0.0.1) que el túnel HTTP puede exponer. Vacío =
+    /// túnel apagado: el agente ignora cualquier `TunnelOpen`.
+    // ponytail: lista en la config local, editada a mano. Cuando el panel
+    // gestione dominios, la escribirá una orden firmada.
+    #[serde(default)]
+    pub tunnel_ports: Vec<u16>,
 }
 
 fn default_endpoint() -> String {
@@ -144,6 +151,7 @@ impl Default for AgentConfig {
             token: String::new(),
             endpoint: default_endpoint(),
             enabled_agents: Vec::new(),
+            tunnel_ports: Vec::new(),
         }
     }
 }

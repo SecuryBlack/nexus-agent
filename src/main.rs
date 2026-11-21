@@ -95,6 +95,7 @@ async fn run_agent(shutdown: tokio::sync::oneshot::Receiver<()>) {
         cfg.endpoint.clone(),
         cfg.token.clone(),
         cfg.enabled_agents.clone(),
+        cfg.tunnel_ports.clone(),
     );
 
     tokio::select! {
