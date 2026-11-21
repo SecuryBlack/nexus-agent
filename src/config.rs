@@ -138,6 +138,28 @@ pub struct AgentConfig {
     // gestione dominios, la escribirá una orden firmada.
     #[serde(default)]
     pub tunnel_ports: Vec<u16>,
+
+    /// Permite además al túnel HTTP los puertos en los que CromoForge publica
+    /// las apps desplegadas desde el panel (`APP_PORTS`), para no tener que
+    /// apuntar aquí el puerto de cada despliegue.
+    #[serde(default)]
+    pub tunnel_apps: bool,
+}
+
+/// Rango de `127.0.0.1` en el que CromoForge publica las apps web
+/// (`PORT_RANGE` en su `deploy.rs`).
+pub const APP_PORTS: std::ops::RangeInclusive<u16> = 20000..=29999;
+
+impl AgentConfig {
+    /// Puertos que el túnel HTTP puede exponer: `tunnel_ports` y, con
+    /// `tunnel_apps`, los de las apps.
+    pub fn allowed_tunnel_ports(&self) -> Vec<u16> {
+        let mut ports = self.tunnel_ports.clone();
+        if self.tunnel_apps {
+            ports.extend(APP_PORTS);
+        }
+        ports
+    }
 }
 
 fn default_endpoint() -> String {
@@ -152,6 +174,7 @@ impl Default for AgentConfig {
             endpoint: default_endpoint(),
             enabled_agents: Vec::new(),
             tunnel_ports: Vec::new(),
+            tunnel_apps: false,
         }
     }
 }
@@ -198,5 +221,22 @@ impl AgentConfig {
         let contents = toml::to_string_pretty(self)?;
         std::fs::write(&path, contents)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tunnel_tests {
+    use super::*;
+
+    #[test]
+    fn tunnel_is_closed_unless_the_local_config_opens_it() {
+        let mut cfg = AgentConfig::default();
+        assert!(cfg.allowed_tunnel_ports().is_empty());
+
+        cfg.tunnel_ports = vec![8080];
+        cfg.tunnel_apps = true;
+        let ports = cfg.allowed_tunnel_ports();
+        assert!(ports.contains(&8080) && ports.contains(&20000) && ports.contains(&29999));
+        assert!(!ports.contains(&19999) && !ports.contains(&30000) && !ports.contains(&22));
     }
 }
