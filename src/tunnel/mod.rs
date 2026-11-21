@@ -1,3 +1,6 @@
+mod data;
+
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
@@ -18,14 +21,21 @@ pub struct TunnelClient {
     endpoint: String,
     token: String,
     enabled_agents: Vec<AgentKind>,
+    tunnel_ports: Arc<[u16]>,
 }
 
 impl TunnelClient {
-    pub fn new(endpoint: String, token: String, enabled_agents: Vec<AgentKind>) -> Self {
+    pub fn new(
+        endpoint: String,
+        token: String,
+        enabled_agents: Vec<AgentKind>,
+        tunnel_ports: Vec<u16>,
+    ) -> Self {
         Self {
             endpoint,
             token,
             enabled_agents,
+            tunnel_ports: tunnel_ports.into(),
         }
     }
 
@@ -83,6 +93,8 @@ impl TunnelClient {
         };
 
         let mut client = TunnelServiceClient::new(channel);
+        // Los flujos del túnel HTTP van por esta misma conexión HTTP/2.
+        let data_client = client.clone();
 
         let (tx, rx) = mpsc::channel::<TunnelEnvelope>(128);
 
@@ -216,7 +228,9 @@ impl TunnelClient {
 
                 inbound_msg = inbound.message() => {
                     match inbound_msg {
-                        Ok(Some(envelope)) => self.handle_inbound(envelope, bridge_tx.clone()),
+                        Ok(Some(envelope)) => {
+                            self.handle_inbound(envelope, bridge_tx.clone(), data_client.clone())
+                        }
                         Ok(None) => {
                             tracing::warn!("tunnel inbound stream closed by gateway, reconnecting…");
                             return Ok(());
@@ -240,12 +254,26 @@ impl TunnelClient {
     /// temporal del stream actual) para que, si el túnel reconecta mientras el
     /// comando se está ejecutando (p.ej. durante una actualización), la
     /// respuesta final no se pierda al caerse el stream anterior.
-    fn handle_inbound(&self, envelope: TunnelEnvelope, tx: mpsc::Sender<TunnelEnvelope>) {
+    fn handle_inbound(
+        &self,
+        envelope: TunnelEnvelope,
+        tx: mpsc::Sender<TunnelEnvelope>,
+        data_client: TunnelServiceClient<Channel>,
+    ) {
         match envelope.payload {
             Some(Payload::Command(cmd)) => {
                 let token = self.token.clone();
                 tokio::spawn(async move {
                     commands::route(cmd, tx, token).await;
+                });
+            }
+            Some(Payload::TunnelOpen(open)) => {
+                let ports = self.tunnel_ports.clone();
+                tokio::spawn(async move {
+                    let port = open.port;
+                    if let Err(e) = data::serve(data_client, open, &ports).await {
+                        tracing::warn!(port, "http tunnel stream ended with error: {e}");
+                    }
                 });
             }
             Some(other) => {

@@ -10,6 +10,12 @@ option go_package = "github.com/securyblack/securyblack-edge-gateway/proto/tunne
 // ─────────────────────────────────────────────────────────────────────────────
 service TunnelService {
   rpc Stream(stream TunnelEnvelope) returns (stream TunnelEnvelope);
+
+  // Flujo de datos de una conexión del túnel HTTP. Lo abre el agente al
+  // recibir un TunnelOpen, con su stream_id en la metadata `x-sb-stream-id`.
+  // Va por la misma conexión HTTP/2 que Stream, pero con su propio control
+  // de flujo: el tráfico web no frena órdenes ni métricas.
+  rpc Data(stream DataChunk) returns (stream DataChunk);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +59,9 @@ message TunnelEnvelope {
 
     // Eventos de seguridad (agente → cloud)
     bytes             security_event_payload = 11;
+
+    // Túnel HTTP: abre una conexión hacia un puerto local (cloud → agente)
+    TunnelOpen        tunnel_open   = 13;
   }
 }
 
@@ -213,6 +222,23 @@ message CommandProgress {
   string stage      = 2;  // libre por agente: "downloading" | "applying" | "verifying"
   string message    = 3;
   int32  percent    = 4;  // -1 si no aplica
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Túnel HTTP — expone un puerto local del servidor en un dominio público
+// ─────────────────────────────────────────────────────────────────────────────
+
+// El gateway pide una conexión a 127.0.0.1:<port>. El agente solo la abre si
+// el puerto está en su lista local de puertos permitidos, y responde llamando
+// a TunnelService.Data con este stream_id. Un agente que no conoce el mensaje
+// lo ignora y el gateway responde 502 al visitante.
+message TunnelOpen {
+  string stream_id = 1;  // aleatorio, de un solo uso
+  uint32 port      = 2;
+}
+
+message DataChunk {
+  bytes data = 1;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
