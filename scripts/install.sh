@@ -189,10 +189,27 @@ BINARY_PATH="${INSTALL_DIR}/${BINARY_NAME}"
 
 # ─── Instalar agentes seleccionados ─────────────────────────────────────────
 
+# Un agente que ya estaba instalado conserva su config, con el token del
+# registro anterior. Si el servidor se vuelve a registrar, ese token ya no es
+# el suyo y el agente rechaza las órdenes firmadas ("invalid command
+# signature"). Se le pone el token nuevo y se reinicia.
+sb_resync_token() {
+    local config="$1" service="$2" rest
+    [[ -f "$config" ]] && grep -qE '^token[[:space:]]*=' "$config" || return 0
+    grep -qxF "token = \"${TOKEN}\"" "$config" && return 0
+    # Sin sed: el token no pasa por ninguna expresión. Va arriba, antes de
+    # cualquier tabla del TOML; `>` conserva los permisos del fichero.
+    rest="$(grep -vE '^token[[:space:]]*=' "$config" || true)"
+    printf 'token = "%s"\n%s\n' "$TOKEN" "$rest" > "$config"
+    systemctl restart "$service" 2>/dev/null || true
+    sb_info "Token actualizado en ${config}."
+}
+
 if $INSTALL_OXIPULSE; then
     sb_info "Instalando OxiPulse"
     if command -v oxipulse &>/dev/null || [[ -f /etc/oxipulse/config.toml ]]; then
         sb_warn "OxiPulse parece estar ya instalado. Saltando."
+        sb_resync_token /etc/oxipulse/config.toml oxipulse
     else
         # Invocar instalador oficial de OxiPulse en modo local_agent
         OXI_URL="https://install.oxipulse.dev"
@@ -213,6 +230,7 @@ if $INSTALL_FERROSENTRY; then
     sb_info "Instalando FerroSentry"
     if command -v ferro-sentry &>/dev/null || [[ -f /etc/ferro-sentry/config.toml ]]; then
         sb_warn "FerroSentry parece estar ya instalado. Saltando."
+        sb_resync_token /etc/ferro-sentry/config.toml ferro-sentry
     else
         FS_URL="https://install.ferrosentry.dev"
         if curl -fsSL "$FS_URL" &>/dev/null; then
@@ -237,6 +255,7 @@ if $INSTALL_CROMOFORGE; then
     sb_info "Instalando CromoForge"
     if command -v cromoforge &>/dev/null || [[ -f /etc/cromoforge/config.toml ]]; then
         sb_warn "CromoForge parece estar ya instalado. Saltando."
+        sb_resync_token /etc/cromoforge/config.toml cromoforge
     else
         CF_URL="https://install.cromoforge.dev"
         if curl -fsSL "$CF_URL" &>/dev/null; then
@@ -256,6 +275,7 @@ if $INSTALL_TITANVAULT; then
     sb_info "Instalando TitanVault"
     if command -v titanvault &>/dev/null || [[ -f /etc/titanvault/config.toml ]]; then
         sb_warn "TitanVault parece estar ya instalado. Saltando."
+        sb_resync_token /etc/titanvault/config.toml titanvault
     else
         TV_URL="https://install.titanvault.dev"
         if curl -fsSL "$TV_URL" &>/dev/null; then
@@ -282,10 +302,15 @@ for a in ${ENABLED_AGENTS[@]+"${ENABLED_AGENTS[@]}"}; do
     TOML_AGENTS+="\"${a}\""
 done
 
+# Lo que el túnel HTTP puede abrir lo decidió este servidor: se conserva al
+# reinstalar.
+TUNNEL_KEYS="$(grep -E '^tunnel_(ports|apps)[[:space:]]*=' "${CONFIG_DIR}/agent.toml" 2>/dev/null || true)"
+
 cat > "${CONFIG_DIR}/agent.toml" <<EOF
 token = "${TOKEN}"
 endpoint = "${ENDPOINT}"
 enabled_agents = [${TOML_AGENTS}]
+${TUNNEL_KEYS}
 EOF
 # Holds the server token; the service runs as root.
 chmod 600 "${CONFIG_DIR}/agent.toml"
