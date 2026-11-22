@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.24] - 2026-11-22
+
+### Added
+- **Allow the app tunnel from the panel**: the new `set_tunnel_apps` command writes `tunnel_apps` to `agent.toml` and restarts the agent, so the permission no longer needs a command on the server. The agent only obeys it with a valid signature from the SecuryBlack API, so the gateway cannot grant itself the permission.
+
 ## [0.2.23] - 2026-11-21
 
 ### Added

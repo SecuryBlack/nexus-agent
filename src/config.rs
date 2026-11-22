@@ -142,6 +142,7 @@ pub struct AgentConfig {
     /// Permite además al túnel HTTP los puertos en los que CromoForge publica
     /// las apps desplegadas desde el panel (`APP_PORTS`), para no tener que
     /// apuntar aquí el puerto de cada despliegue.
+    /// Lo escribe también la orden firmada `set_tunnel_apps` del panel.
     #[serde(default)]
     pub tunnel_apps: bool,
 }

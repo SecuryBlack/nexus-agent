@@ -80,6 +80,23 @@ async fn route_to_nexus(
         }
     } else if cmd.command_type == "update_now" {
         handle_update_now(&cmd.command_id).await
+    } else if cmd.command_type == "set_tunnel_apps" {
+        // Abre puertos del servidor a internet: exige la firma de la API aunque
+        // el resto de órdenes siga en transición. Así el gateway, que no tiene
+        // la clave, no puede concederse el permiso a sí mismo.
+        match sb_agent_core::command_signing::verify_command(&envelope, "", &ctx.server_token, now)
+        {
+            Ok(()) => handle_set_tunnel_apps(
+                &cmd.command_id,
+                &envelope.payload,
+                &crate::config::AgentConfig::config_path(),
+                true,
+            ),
+            Err(e) => failed(
+                &cmd.command_id,
+                format!("nexus-agent: command rejected: {e}"),
+            ),
+        }
     } else {
         tracing::warn!(command_type = %cmd.command_type, "command targeted at nexus itself: not implemented yet");
         CommandResponse {
@@ -95,6 +112,55 @@ async fn route_to_nexus(
         }
     };
     send_envelope(&tx, Payload::CommandResp(response)).await;
+}
+
+fn failed(command_id: &str, stderr: String) -> CommandResponse {
+    CommandResponse {
+        command_id: command_id.to_string(),
+        success: false,
+        stdout: String::new(),
+        stderr,
+        exit_code: 1,
+        duration_ms: 0,
+    }
+}
+
+/// Escribe `tunnel_apps` en el config. Los puertos permitidos se leen al
+/// arrancar, así que sale para que el gestor de servicios lo relance (igual
+/// que `update_now`, con el mismo margen para que salga la respuesta).
+fn handle_set_tunnel_apps(
+    command_id: &str,
+    payload: &serde_json::Value,
+    config_path: &std::path::Path,
+    restart: bool,
+) -> CommandResponse {
+    let Some(enabled) = payload.get("enabled").and_then(|v| v.as_bool()) else {
+        return failed(
+            command_id,
+            "set_tunnel_apps: payload needs a boolean `enabled`".into(),
+        );
+    };
+    if let Err(e) = sb_agent_core::config::sync_bool_field(config_path, "tunnel_apps", enabled) {
+        return failed(
+            command_id,
+            format!("set_tunnel_apps: cannot write config: {e}"),
+        );
+    }
+    tracing::info!(enabled, "tunnel_apps changed from the panel, restarting");
+    if restart {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            std::process::exit(0);
+        });
+    }
+    CommandResponse {
+        command_id: command_id.to_string(),
+        success: true,
+        stdout: serde_json::json!({ "tunnel_apps": enabled }).to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+        duration_ms: 0,
+    }
 }
 
 /// Dispara `sb_agent_core::updater::check_now` de inmediato en vez de
@@ -318,5 +384,51 @@ mod tests {
             panic!("expected a CommandResponse");
         };
         assert!(resp.stderr.contains("not implemented"), "{}", resp.stderr);
+    }
+
+    /// Sin firma válida no se toca el config, ni siquiera en transición.
+    #[tokio::test]
+    async fn set_tunnel_apps_needs_a_valid_signature() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let cmd = CommandRequest {
+            command_id: "c2".into(),
+            command_type: "set_tunnel_apps".into(),
+            payload: r#"{"enabled":true}"#.into(),
+            ..Default::default()
+        };
+        route(cmd, tx, "tok".into()).await;
+        rx.recv().await; // etapa sig:*
+        let Some(Payload::CommandResp(resp)) = rx.recv().await.and_then(|e| e.payload) else {
+            panic!("expected a CommandResponse");
+        };
+        assert!(
+            !resp.success && resp.stderr.contains("not signed"),
+            "{}",
+            resp.stderr
+        );
+    }
+
+    #[test]
+    fn set_tunnel_apps_writes_the_config_once() {
+        let path =
+            std::env::temp_dir().join(format!("nexus-tunnel-apps-{}.toml", std::process::id()));
+        std::fs::write(
+            &path,
+            "token = \"t\"
+tunnel_ports = [8080]
+",
+        )
+        .unwrap();
+        for _ in 0..2 {
+            let r =
+                handle_set_tunnel_apps("c", &serde_json::json!({"enabled": true}), &path, false);
+            assert!(r.success, "{}", r.stderr);
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.matches("tunnel_apps").count(), 1, "{text}");
+        let cfg: crate::config::AgentConfig = toml::from_str(&text).unwrap();
+        assert!(cfg.tunnel_apps && cfg.tunnel_ports == vec![8080]);
+        assert!(!handle_set_tunnel_apps("c", &serde_json::json!({}), &path, false).success);
+        std::fs::remove_file(&path).ok();
     }
 }
