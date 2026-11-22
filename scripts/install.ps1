@@ -230,12 +230,20 @@ try {
     Write-Host "`n=== Configurando nexus-agent ===" -ForegroundColor Cyan
 
     $formattedAgents = ($enabledAgents | ForEach-Object { '"' + $_ + '"' }) -join ', '
+    # Lo que el túnel HTTP puede abrir lo decidió este servidor: se conserva al
+    # reinstalar, como en install.sh.
+    $tunnelKeys = ""
+    if (Test-Path $configPath) {
+        $tunnelKeys = (Select-String -Path $configPath -Pattern '^tunnel_(ports|apps)\s*=' |
+            ForEach-Object { $_.Line }) -join "`n"
+    }
     @"
 version = "$version"
 token = "$Token"
 endpoint = "$Endpoint"
 enabled_agents = [$formattedAgents]
-"@ | Set-Content -Path (Join-Path $DataDir "agent.toml") -Encoding UTF8
+$tunnelKeys
+"@ | Set-Content -Path $configPath -Encoding UTF8
     Write-SbSuccess "Configuración escrita en $DataDir\agent.toml"
 
     # ─── Registrar servicio Windows ──────────────────────────────────────────

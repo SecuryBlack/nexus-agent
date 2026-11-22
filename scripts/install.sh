@@ -275,7 +275,7 @@ if $INSTALL_TITANVAULT; then
     sb_info "Instalando TitanVault"
     if command -v titanvault &>/dev/null || [[ -f /etc/titanvault/config.toml ]]; then
         sb_warn "TitanVault parece estar ya instalado. Saltando."
-        sb_resync_token /etc/titanvault/config.toml titanvault
+        # Sin sb_resync_token: TitanVault verifica con el token de Nexus.
     else
         TV_URL="https://install.titanvault.dev"
         if curl -fsSL "$TV_URL" &>/dev/null; then
